@@ -4,6 +4,9 @@ import SwiftUI
 struct ContentView: View {
     @StateObject private var viewModel = FundViewModel()
     @State private var showAddFund = false
+    @State private var editingFundCode: String?
+    @State private var editingFundName: String?
+    @State private var showEditHolding = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +24,7 @@ struct ContentView: View {
 
             Divider()
 
-            // 总收益率汇总
+            // 持仓汇总
             if !viewModel.funds.isEmpty {
                 summaryView
                 Divider()
@@ -34,10 +37,22 @@ struct ContentView: View {
                 Divider()
             }
 
+            // 编辑持仓区域
+            if showEditHolding, let code = editingFundCode, let name = editingFundName {
+                EditHoldingView(
+                    viewModel: viewModel,
+                    isPresented: $showEditHolding,
+                    fundCode: code,
+                    fundName: name
+                )
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                Divider()
+            }
+
             // 底部栏
             footerView
         }
-        .frame(width: 340)
+        .frame(width: 360)
     }
 
     // MARK: - Header
@@ -82,6 +97,7 @@ struct ContentView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showAddFund.toggle()
+                    if showAddFund { showEditHolding = false }
                 }
             } label: {
                 Image(systemName: showAddFund ? "minus.circle.fill" : "plus.circle.fill")
@@ -100,11 +116,23 @@ struct ContentView: View {
         ScrollView {
             LazyVStack(spacing: 0) {
                 ForEach(viewModel.funds) { fund in
-                    FundRowView(fund: fund) {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            viewModel.removeFund(code: fund.fundcode)
+                    FundRowView(
+                        fund: fund,
+                        holding: viewModel.getWatchedFund(code: fund.fundcode),
+                        onDelete: {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                viewModel.removeFund(code: fund.fundcode)
+                            }
+                        },
+                        onEditHolding: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                editingFundCode = fund.fundcode
+                                editingFundName = fund.name
+                                showEditHolding = true
+                                showAddFund = false
+                            }
                         }
-                    }
+                    )
 
                     if fund.id != viewModel.funds.last?.id {
                         Divider()
@@ -140,29 +168,64 @@ struct ContentView: View {
 
     private var summaryView: some View {
         HStack(spacing: 8) {
-            Text("总收益率")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("总收益率")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
 
-            Text("\(viewModel.funds.count) 只基金")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                    Text("\(viewModel.funds.count) 只基金")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+
+                if viewModel.hasAnyHolding {
+                    HStack(spacing: 4) {
+                        Text("市值")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Text(String(format: "%.2f", viewModel.totalMarketValue))
+                            .font(.system(size: 10).monospacedDigit())
+                            .foregroundStyle(.secondary)
+
+                        Text("盈亏")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .padding(.leading, 4)
+                        let pl = viewModel.totalProfitLoss
+                        let plSign = pl >= 0 ? "+" : ""
+                        Text("\(plSign)\(String(format: "%.2f", pl))")
+                            .font(.system(size: 10, weight: .medium).monospacedDigit())
+                            .foregroundStyle(pl >= 0 ? .red : .green)
+                    }
+                }
+            }
 
             Spacer()
 
-            Text(viewModel.totalChangeDisplay)
-                .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                .foregroundStyle(summaryColor)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 2)
-                .background(summaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(viewModel.totalChangeDisplay)
+                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(summaryColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(summaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+
+                if viewModel.hasAnyHolding {
+                    let pp = viewModel.totalProfitPercent
+                    let ppSign = pp >= 0 ? "+" : ""
+                    Text("持仓 \(ppSign)\(String(format: "%.2f", pp))%")
+                        .font(.system(size: 10, weight: .medium).monospacedDigit())
+                        .foregroundStyle(pp >= 0 ? .red : .green)
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
 
     private var summaryColor: Color {
-        let avg = viewModel.funds.map(\.changePercent).reduce(0, +) / Double(viewModel.funds.count)
+        let avg = viewModel.totalChangePercent
         if avg > 0 { return .red }
         if avg < 0 { return .green }
         return .secondary
@@ -179,6 +242,32 @@ struct ContentView: View {
             }
 
             Spacer()
+
+            // 数据源切换
+            Menu {
+                ForEach(DataSource.allCases, id: \.self) { source in
+                    Button {
+                        viewModel.currentDataSource = source
+                    } label: {
+                        HStack {
+                            Text(source.rawValue)
+                            if viewModel.currentDataSource == source {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "server.rack")
+                        .font(.system(size: 9))
+                    Text(viewModel.currentDataSource.rawValue)
+                        .font(.system(size: 10))
+                }
+                .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
             // 退出按钮
             Button {

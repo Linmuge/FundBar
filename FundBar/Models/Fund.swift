@@ -1,6 +1,12 @@
 import Foundation
 
-/// 基金估值数据模型 - 对应天天基金 API 返回的 JSONP 数据
+/// 数据源类型
+enum DataSource: String, Codable, CaseIterable {
+    case tiantian = "天天基金"
+    case danjuan = "蛋卷基金"
+}
+
+/// 基金估值数据模型 - 对应 API 返回的数据
 struct Fund: Identifiable, Codable, Equatable {
     let fundcode: String   // 基金代码
     let name: String       // 基金名称
@@ -8,8 +14,51 @@ struct Fund: Identifiable, Codable, Equatable {
     let gsz: String        // 估算净值
     let gszzl: String      // 估算涨跌幅 (%)
     let gztime: String     // 估算时间
+    let jzrq: String       // 净值日期 (yyyy-MM-dd)
 
     var id: String { fundcode }
+
+    // jzrq 可能缺失（蛋卷等数据源），提供默认值
+    init(fundcode: String, name: String, dwjz: String, gsz: String, gszzl: String, gztime: String, jzrq: String = "") {
+        self.fundcode = fundcode
+        self.name = name
+        self.dwjz = dwjz
+        self.gsz = gsz
+        self.gszzl = gszzl
+        self.gztime = gztime
+        self.jzrq = jzrq
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case fundcode, name, dwjz, gsz, gszzl, gztime, jzrq
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fundcode = try container.decode(String.self, forKey: .fundcode)
+        name = try container.decode(String.self, forKey: .name)
+        dwjz = try container.decode(String.self, forKey: .dwjz)
+        gsz = try container.decode(String.self, forKey: .gsz)
+        gszzl = try container.decode(String.self, forKey: .gszzl)
+        gztime = try container.decode(String.self, forKey: .gztime)
+        jzrq = try container.decodeIfPresent(String.self, forKey: .jzrq) ?? ""
+    }
+
+    /// 最佳可用净值：当日净值已更新则用实际净值，否则用估算净值
+    var bestNav: Double {
+        if isNavUpdatedToday {
+            return unitValue
+        }
+        return estimatedValue
+    }
+
+    /// 当日净值是否已更新
+    var isNavUpdatedToday: Bool {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        return jzrq == today
+    }
 
     /// 涨跌幅数值
     var changePercent: Double {
@@ -37,10 +86,38 @@ struct Fund: Identifiable, Codable, Equatable {
     }
 }
 
-/// 自选基金 - 用于持久化存储
+/// 自选基金 - 用于持久化存储（含持仓信息）
 struct WatchedFund: Codable, Identifiable, Equatable {
     let code: String
     var sortIndex: Int
+    var shares: Double      // 持有份额（0 表示未录入）
+    var costPrice: Double   // 持仓成本净值（0 表示未录入）
 
     var id: String { code }
+
+    /// 是否有持仓数据
+    var hasHolding: Bool {
+        shares > 0 && costPrice > 0
+    }
+
+    /// 计算持仓市值
+    func marketValue(nav: Double) -> Double {
+        shares * nav
+    }
+
+    /// 计算持仓成本
+    var totalCost: Double {
+        shares * costPrice
+    }
+
+    /// 计算持仓盈亏
+    func profitLoss(nav: Double) -> Double {
+        marketValue(nav: nav) - totalCost
+    }
+
+    /// 计算盈亏比例
+    func profitPercent(nav: Double) -> Double {
+        guard totalCost > 0 else { return 0 }
+        return (profitLoss(nav: nav) / totalCost) * 100
+    }
 }

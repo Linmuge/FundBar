@@ -14,6 +14,7 @@
 		AA000005 /* FundViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000005 /* FundViewModel.swift */; };
 		AA000006 /* FundRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000006 /* FundRowView.swift */; };
 		AA000007 /* AddFundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000007 /* AddFundView.swift */; };
+		AA000009 /* EditHoldingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000011 /* EditHoldingView.swift */; };
 		AA000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB000008 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -28,6 +29,7 @@
 		AB000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AB000009 /* FundBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FundBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB000010 /* FundBar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FundBar.entitlements; sourceTree = "<group>"; };
+		AB000011 /* EditHoldingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditHoldingView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +95,7 @@
 				AB000002 /* ContentView.swift */,
 				AB000006 /* FundRowView.swift */,
 				AB000007 /* AddFundView.swift */,
+				AB000011 /* EditHoldingView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -181,6 +184,7 @@
 				AA000005 /* FundViewModel.swift in Sources */,
 				AA000006 /* FundRowView.swift in Sources */,
 				AA000007 /* AddFundView.swift in Sources */,
+				AA000009 /* EditHoldingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
