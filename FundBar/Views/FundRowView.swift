@@ -4,11 +4,20 @@ import SwiftUI
 struct FundRowView: View {
     let fund: Fund
     let holding: WatchedFund?
+    let historyData: [Double]
     let onDelete: () -> Void
     let onEditHolding: () -> Void
 
+    init(fund: Fund, holding: WatchedFund?, historyData: [Double] = [], onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
+        self.fund = fund
+        self.holding = holding
+        self.historyData = historyData
+        self.onDelete = onDelete
+        self.onEditHolding = onEditHolding
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             // 左侧: 基金名称 + 代码 + 持仓
             VStack(alignment: .leading, spacing: 3) {
                 Text(fund.name)
@@ -32,6 +41,11 @@ struct FundRowView: View {
             }
 
             Spacer()
+
+            // 中间: 迷你图
+            if !historyData.isEmpty {
+                MiniChartView(data: historyData, width: 48, height: 24)
+            }
 
             // 右侧: 净值 + 涨跌幅 + 盈亏
             VStack(alignment: .trailing, spacing: 3) {

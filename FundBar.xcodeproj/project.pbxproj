@@ -15,6 +15,8 @@
 		AA000006 /* FundRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000006 /* FundRowView.swift */; };
 		AA000007 /* AddFundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000007 /* AddFundView.swift */; };
 		AA000009 /* EditHoldingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000011 /* EditHoldingView.swift */; };
+		AA000010 /* MiniChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000012 /* MiniChartView.swift */; };
+		AA000011 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000013 /* NotificationService.swift */; };
 		AA000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB000008 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -30,6 +32,8 @@
 		AB000009 /* FundBar.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FundBar.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB000010 /* FundBar.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = FundBar.entitlements; sourceTree = "<group>"; };
 		AB000011 /* EditHoldingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditHoldingView.swift; sourceTree = "<group>"; };
+		AB000012 /* MiniChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniChartView.swift; sourceTree = "<group>"; };
+		AB000013 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -77,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				AB000004 /* FundService.swift */,
+				AB000013 /* NotificationService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -96,6 +101,7 @@
 				AB000006 /* FundRowView.swift */,
 				AB000007 /* AddFundView.swift */,
 				AB000011 /* EditHoldingView.swift */,
+				AB000012 /* MiniChartView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -185,6 +191,8 @@
 				AA000006 /* FundRowView.swift in Sources */,
 				AA000007 /* AddFundView.swift in Sources */,
 				AA000009 /* EditHoldingView.swift in Sources */,
+				AA000010 /* MiniChartView.swift in Sources */,
+				AA000011 /* NotificationService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

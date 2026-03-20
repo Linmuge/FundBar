@@ -25,11 +25,9 @@ final class FundService {
         self.session = session
 
         let tiantian = TiantianFundSource(session: session)
-        let eastmoney = EastMoneyFundSource(session: session)
 
         self.sources = [
-            .tiantian: tiantian,
-            .eastmoney: eastmoney
+            .tiantian: tiantian
         ]
         self.currentSource = tiantian
     }
@@ -67,6 +65,102 @@ final class FundService {
                 results.first { $0.fundcode == code }
             }
         }
+    }
+
+    /// 搜索基金
+    func searchFunds(keyword: String) async -> [FundSearchResult] {
+        let encoded = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? keyword
+        let urlString = "https://fundsearchapi.eastmoney.com/FundSearchApi/FundSearchAS498.ashx?m=1&key=\(encoded)&_=\(Int(Date().timeIntervalSince1970 * 1000))"
+        guard let url = URL(string: urlString) else { return [] }
+
+        do {
+            var request = URLRequest(url: url)
+            request.setValue("https://fund.eastmoney.com", forHTTPHeaderField: "Referer")
+            let (data, _) = try await session.data(for: request)
+
+            guard let str = String(data: data, encoding: .utf8) else { return [] }
+
+            // 解析 JSONP: jQuery...({"Datas":[...],...})
+            let pattern = "\\((.+)\\)"
+            guard let regex = try? NSRegularExpression(pattern: pattern),
+                  let match = regex.firstMatch(in: str, range: NSRange(str.startIndex..., in: str)),
+                  let jsonRange = Range(match.range(at: 1), in: str),
+                  let jsonData = String(str[jsonRange]).data(using: .utf8) else { return [] }
+
+            let response = try JSONDecoder().decode(FundSearchResponse.self, from: jsonData)
+            return response.datas?.compactMap { item in
+                guard let code = item.code, let name = item.name else { return nil }
+                return FundSearchResult(code: code, name: name, type: item.fundBaseInfo?.ftype ?? "")
+            } ?? []
+        } catch {
+            return []
+        }
+    }
+
+    /// 获取7日历史净值
+    func fetchHistory(code: String, days: Int = 7) async -> [HistoryNav] {
+        let urlString = "https://api.fund.eastmoney.com/f10/lsjz?fundCode=\(code)&pageIndex=1&pageSize=\(days)&_=\(Int(Date().timeIntervalSince1970 * 1000))"
+        guard let url = URL(string: urlString) else { return [] }
+
+        do {
+            var request = URLRequest(url: url)
+            request.setValue("https://fund.eastmoney.com", forHTTPHeaderField: "Referer")
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
+            let (data, _) = try await session.data(for: request)
+
+            let emResponse = try JSONDecoder().decode(EastMoneyResponse.self, from: data)
+            return emResponse.data?.lsjzList?.compactMap { item in
+                guard let dateStr = item.fsrq, let navStr = item.dwjz, let nav = Double(navStr) else { return nil }
+                return HistoryNav(date: dateStr, nav: nav)
+            } ?? []
+        } catch {
+            return []
+        }
+    }
+}
+
+/// 搜索结果
+struct FundSearchResult: Identifiable {
+    let code: String
+    let name: String
+    let type: String
+    var id: String { code }
+}
+
+/// 历史净值
+struct HistoryNav: Identifiable {
+    let date: String
+    let nav: Double
+    var id: String { date }
+}
+
+// MARK: - 搜索 API 响应模型
+
+struct FundSearchResponse: Codable {
+    let datas: [FundSearchItem]?
+
+    enum CodingKeys: String, CodingKey {
+        case datas = "Datas"
+    }
+}
+
+struct FundSearchItem: Codable {
+    let code: String?
+    let name: String?
+    let fundBaseInfo: FundSearchBaseInfo?
+
+    enum CodingKeys: String, CodingKey {
+        case code = "CODE"
+        case name = "NAME"
+        case fundBaseInfo = "FundBaseInfo"
+    }
+}
+
+struct FundSearchBaseInfo: Codable {
+    let ftype: String?
+
+    enum CodingKeys: String, CodingKey {
+        case ftype = "FTYPE"
     }
 }
 
@@ -117,72 +211,39 @@ final class TiantianFundSource: FundDataSource {
     }
 }
 
-// MARK: - 东方财富数据源
-
-final class EastMoneyFundSource: FundDataSource {
-    let name = "东方财富"
-    private let session: URLSession
-
-    init(session: URLSession) {
-        self.session = session
-    }
-
-    func fetchEstimate(code: String) async throws -> Fund {
-        // 用历史净值 API 获取最新已发布净值
-        let urlString = "https://api.fund.eastmoney.com/f10/lsjz?fundCode=\(code)&pageIndex=1&pageSize=1&_=\(Int(Date().timeIntervalSince1970 * 1000))"
-        guard let url = URL(string: urlString) else {
-            throw FundError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.setValue("https://fund.eastmoney.com", forHTTPHeaderField: "Referer")
-        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw FundError.serverError
-        }
-
-        let emResponse = try JSONDecoder().decode(EastMoneyResponse.self, from: data)
-
-        guard let item = emResponse.Data?.LSJZList?.first else {
-            throw FundError.decodingError
-        }
-
-        let nav = item.DWJZ ?? "0"
-        let changeRate = item.JZZZL ?? "0"
-        let navDate = item.FSRQ ?? ""
-
-        return Fund(
-            fundcode: code,
-            name: emResponse.Data?.FundType ?? code,
-            dwjz: nav,
-            gsz: nav,       // 历史净值源无估算值，用实际净值
-            gszzl: changeRate,
-            gztime: navDate,
-            jzrq: navDate
-        )
-    }
-}
-
 /// 东方财富 API 响应模型
-private struct EastMoneyResponse: Codable {
-    let Data: EastMoneyData?
-    let ErrCode: Int?
+struct EastMoneyResponse: Codable {
+    let data: EastMoneyData?
+    let errCode: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case data = "Data"
+        case errCode = "ErrCode"
+    }
 }
 
-private struct EastMoneyData: Codable {
-    let LSJZList: [EastMoneyNavItem]?
-    let FundType: String?
+struct EastMoneyData: Codable {
+    let lsjzList: [EastMoneyNavItem]?
+    let fundType: String?
+
+    enum CodingKeys: String, CodingKey {
+        case lsjzList = "LSJZList"
+        case fundType = "FundType"
+    }
 }
 
-private struct EastMoneyNavItem: Codable {
-    let FSRQ: String?   // 净值日期
-    let DWJZ: String?   // 单位净值
-    let LJJZ: String?   // 累计净值
-    let JZZZL: String?  // 净值增长率
+struct EastMoneyNavItem: Codable {
+    let fsrq: String?   // 净值日期
+    let dwjz: String?   // 单位净值
+    let ljjz: String?   // 累计净值
+    let jzzzl: String?  // 净值增长率
+
+    enum CodingKeys: String, CodingKey {
+        case fsrq = "FSRQ"
+        case dwjz = "DWJZ"
+        case ljjz = "LJJZ"
+        case jzzzl = "JZZZL"
+    }
 }
 
 /// 基金服务错误类型

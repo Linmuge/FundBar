@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import ServiceManagement
 
 /// 基金估值 ViewModel - 管理数据获取、自动刷新和持久化
 @MainActor
@@ -9,6 +10,7 @@ final class FundViewModel: ObservableObject {
     // MARK: - Published Properties
 
     @Published var funds: [Fund] = []
+    @Published var fundHistory: [String: [Double]] = [:]  // code -> 7日净值列表
     @Published var isLoading = false
     @Published var lastUpdateTime: Date?
     @Published var errorMessage: String?
@@ -40,12 +42,65 @@ final class FundViewModel: ObservableObject {
 
     private let watchedFundsKey = "watched_funds_v2"
     private let dataSourceKey = "data_source"
+    private let launchAtLoginKey = "launch_at_login"
+    private let notifyThresholdKey = "notify_threshold"
 
     // MARK: - Computed Properties
 
     /// 自选基金代码列表
     var watchedCodes: [String] {
         watchedFunds.map(\.code)
+    }
+
+    /// 菜单栏显示文字
+    var menuBarText: String {
+        if hasAnyHolding {
+            let ep = todayEstimatedProfit
+            let sign = ep >= 0 ? "+" : ""
+            return "\(sign)\(String(format: "%.0f", ep))"
+        } else {
+            return totalChangeDisplay
+        }
+    }
+
+    /// 菜单栏文字颜色
+    var menuBarColor: Color {
+        if hasAnyHolding {
+            let ep = todayEstimatedProfit
+            if ep > 0 { return .red }
+            if ep < 0 { return .green }
+            return .secondary
+        } else {
+            let avg = totalChangePercent
+            if avg > 0 { return .red }
+            if avg < 0 { return .green }
+            return .secondary
+        }
+    }
+
+    /// 开机自启
+    var launchAtLogin: Bool {
+        get { UserDefaults.standard.bool(forKey: launchAtLoginKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: launchAtLoginKey)
+            do {
+                if newValue {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } catch {
+                print("Launch at login error: \(error)")
+            }
+            objectWillChange.send()
+        }
+    }
+
+    /// 涨跌通知阈值（%，0 = 关闭）
+    @Published var notifyThreshold: Double = 0 {
+        didSet {
+            UserDefaults.standard.set(notifyThreshold, forKey: notifyThresholdKey)
+        }
     }
 
     /// 总估算涨跌幅
@@ -140,6 +195,10 @@ final class FundViewModel: ObservableObject {
         } else {
             _watchedFunds = Published(initialValue: migrateFromOldFormat())
         }
+
+        // 恢复通知阈值
+        let savedThreshold = UserDefaults.standard.double(forKey: notifyThresholdKey)
+        _notifyThreshold = Published(initialValue: savedThreshold)
 
         startAutoRefresh()
         Task { await refresh() }
@@ -243,6 +302,36 @@ final class FundViewModel: ObservableObject {
             self.lastUpdateTime = Date()
             self.isLoading = false
         }
+
+        // 涨跌通知检查
+        NotificationService.shared.checkAndNotify(funds: result, threshold: notifyThreshold)
+
+        // 异步加载历史数据（不阻塞主刷新）
+        Task { await fetchHistoryData(codes: codes) }
+    }
+
+    /// 获取所有基金的7日历史净值
+    private func fetchHistoryData(codes: [String]) async {
+        var results: [(String, [Double])] = []
+        await withTaskGroup(of: (String, [Double]).self) { group in
+            for code in codes {
+                // 已有数据的跳过
+                if fundHistory[code] != nil { continue }
+                group.addTask {
+                    let history = await self.service.fetchHistory(code: code, days: 7)
+                    return (code, history.map(\.nav))
+                }
+            }
+            for await result in group {
+                results.append(result)
+            }
+        }
+        // 统一在 @MainActor 上赋值
+        for (code, navs) in results {
+            if !navs.isEmpty {
+                fundHistory[code] = navs
+            }
+        }
     }
 
     /// 开始自动刷新（交易时间 30s，非交易时间 5min）
@@ -252,6 +341,8 @@ final class FundViewModel: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                // 每日首次刷新时重置通知记录
+                NotificationService.shared.resetDailyIfNeeded()
                 // 动态调整刷新频率
                 let shouldUseTradingInterval = self.isTradingTime
                 let currentInterval = shouldUseTradingInterval ? self.tradingRefreshInterval : self.idleRefreshInterval
@@ -261,6 +352,72 @@ final class FundViewModel: ObservableObject {
                 await self.refresh()
             }
         }
+    }
+
+    // MARK: - Reorder
+
+    /// 拖拽排序
+    func moveFund(from source: IndexSet, to destination: Int) {
+        // 拷贝 → 修改 → 整体赋值，只触发一次 didSet 持久化
+        var updated = watchedFunds
+        updated.move(fromOffsets: source, toOffset: destination)
+        for i in 0..<updated.count {
+            updated[i].sortIndex = i
+        }
+        watchedFunds = updated
+        // 同步 funds 顺序
+        let orderedCodes = watchedFunds.map(\.code)
+        funds.sort { a, b in
+            (orderedCodes.firstIndex(of: a.fundcode) ?? 0) < (orderedCodes.firstIndex(of: b.fundcode) ?? 0)
+        }
+    }
+
+    // MARK: - Data Export/Import
+
+    /// 导出数据
+    func exportData(to url: URL) {
+        struct ExportData: Codable {
+            let watchedFunds: [WatchedFund]
+            let dataSource: String
+            let exportDate: String
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        let data = ExportData(
+            watchedFunds: watchedFunds,
+            dataSource: currentDataSource.rawValue,
+            exportDate: formatter.string(from: Date())
+        )
+
+        if let jsonData = try? JSONEncoder().encode(data) {
+            try? jsonData.write(to: url)
+        }
+    }
+
+    /// 导入数据
+    func importData(from url: URL) {
+        struct ExportData: Codable {
+            let watchedFunds: [WatchedFund]
+            let dataSource: String?
+        }
+
+        guard let jsonData = try? Data(contentsOf: url),
+              let data = try? JSONDecoder().decode(ExportData.self, from: jsonData) else {
+            errorMessage = "导入文件格式无效"
+            return
+        }
+
+        watchedFunds = data.watchedFunds
+        // 使用底层 Published 赋值避免触发 didSet 中的 refresh
+        if let sourceStr = data.dataSource, let source = DataSource(rawValue: sourceStr) {
+            _currentDataSource = Published(wrappedValue: source)
+            service.switchSource(to: source)
+            UserDefaults.standard.set(source.rawValue, forKey: dataSourceKey)
+        }
+        fundHistory = [:]  // 清空历史数据以重新加载
+        Task { await refresh() }
     }
 
     /// 停止自动刷新

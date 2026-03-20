@@ -3,7 +3,6 @@ import Foundation
 /// 数据源类型
 enum DataSource: String, Codable, CaseIterable {
     case tiantian = "天天基金"
-    case eastmoney = "东方财富"
 }
 
 /// 基金估值数据模型 - 对应 API 返回的数据

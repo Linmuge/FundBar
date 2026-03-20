@@ -1,12 +1,14 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 主面板视图
 struct ContentView: View {
-    @StateObject private var viewModel = FundViewModel()
+    @ObservedObject var viewModel: FundViewModel
     @State private var showAddFund = false
     @State private var editingFundCode: String?
     @State private var editingFundName: String?
     @State private var showEditHolding = false
+    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,6 +48,13 @@ struct ContentView: View {
                     fundName: name
                 )
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
+                Divider()
+            }
+
+            // 设置区域
+            if showSettings {
+                settingsView
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 Divider()
             }
 
@@ -97,7 +106,10 @@ struct ContentView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     showAddFund.toggle()
-                    if showAddFund { showEditHolding = false }
+                    if showAddFund {
+                        showEditHolding = false
+                        showSettings = false
+                    }
                 }
             } label: {
                 Image(systemName: showAddFund ? "minus.circle.fill" : "plus.circle.fill")
@@ -119,6 +131,7 @@ struct ContentView: View {
                     FundRowView(
                         fund: fund,
                         holding: viewModel.getWatchedFund(code: fund.fundcode),
+                        historyData: viewModel.fundHistory[fund.fundcode] ?? [],
                         onDelete: {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 viewModel.removeFund(code: fund.fundcode)
@@ -130,6 +143,7 @@ struct ContentView: View {
                                 editingFundName = fund.name
                                 showEditHolding = true
                                 showAddFund = false
+                                showSettings = false
                             }
                         }
                     )
@@ -144,18 +158,23 @@ struct ContentView: View {
         .frame(height: min(listIdealHeight, listMaxHeight))
     }
 
-    /// 列表理想高度 = 行数 * 每行高度（含持仓行更高）
+    /// 列表理想高度
     private var listIdealHeight: CGFloat {
         let funds = viewModel.funds
         guard !funds.isEmpty else { return 80 }
         let total = funds.reduce(CGFloat(0)) { sum, fund in
             let hasHolding = viewModel.getWatchedFund(code: fund.fundcode)?.hasHolding ?? false
-            return sum + (hasHolding ? 82 : 64)
+            let hasChart = viewModel.fundHistory[fund.fundcode] != nil
+            // 基础高度 + 持仓附加 + 迷你图附加
+            var rowHeight: CGFloat = 56
+            if hasHolding { rowHeight += 18 }
+            if hasChart { rowHeight += 8 }
+            return sum + rowHeight
         }
         return total
     }
 
-    /// 列表最大高度 = 屏幕可用高度的 70%
+    /// 列表最大高度
     private var listMaxHeight: CGFloat {
         let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
         return screenHeight * 0.7
@@ -187,7 +206,6 @@ struct ContentView: View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 if viewModel.hasAnyHolding {
-                    // 总市值
                     HStack(spacing: 4) {
                         Text("总市值")
                             .font(.system(size: 11))
@@ -196,7 +214,6 @@ struct ContentView: View {
                             .font(.system(size: 12, weight: .semibold).monospacedDigit())
                     }
 
-                    // 今日预估 + 持仓盈亏
                     HStack(spacing: 8) {
                         let ep = viewModel.todayEstimatedProfit
                         let epSign = ep >= 0 ? "+" : ""
@@ -262,6 +279,84 @@ struct ContentView: View {
         return .secondary
     }
 
+    // MARK: - Settings
+
+    private var settingsView: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Text("设置")
+                    .font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showSettings = false
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // 开机自启
+            HStack {
+                Label("开机自启", systemImage: "power")
+                    .font(.system(size: 12))
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { viewModel.launchAtLogin },
+                    set: { viewModel.launchAtLogin = $0 }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            // 涨跌通知
+            HStack {
+                Label("涨跌通知", systemImage: "bell")
+                    .font(.system(size: 12))
+                Spacer()
+                Picker("", selection: $viewModel.notifyThreshold) {
+                    Text("关闭").tag(0.0)
+                    Text("1%").tag(1.0)
+                    Text("2%").tag(2.0)
+                    Text("3%").tag(3.0)
+                    Text("5%").tag(5.0)
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
+                .controlSize(.small)
+            }
+
+            Divider()
+
+            // 导出 / 导入
+            HStack(spacing: 12) {
+                Button {
+                    exportData()
+                } label: {
+                    Label("导出数据", systemImage: "square.and.arrow.up")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    importData()
+                } label: {
+                    Label("导入数据", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Spacer()
+            }
+        }
+        .padding(16)
+    }
+
     // MARK: - Footer
 
     private var footerView: some View {
@@ -274,31 +369,21 @@ struct ContentView: View {
 
             Spacer()
 
-            // 数据源切换
-            Menu {
-                ForEach(DataSource.allCases, id: \.self) { source in
-                    Button {
-                        viewModel.currentDataSource = source
-                    } label: {
-                        HStack {
-                            Text(source.rawValue)
-                            if viewModel.currentDataSource == source {
-                                Image(systemName: "checkmark")
-                            }
-                        }
+            // 设置按钮
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings.toggle()
+                    if showSettings {
+                        showAddFund = false
+                        showEditHolding = false
                     }
                 }
             } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: "server.rack")
-                        .font(.system(size: 9))
-                    Text(viewModel.currentDataSource.rawValue)
-                        .font(.system(size: 10))
-                }
-                .foregroundStyle(.secondary)
+                Image(systemName: "gearshape")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
+            .buttonStyle(.plain)
 
             // 退出按钮
             Button {
@@ -312,5 +397,27 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+    }
+
+    // MARK: - Data Export/Import
+
+    private func exportData() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "FundBar_Data.json"
+        panel.allowedContentTypes = [.json]
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            viewModel.exportData(to: url)
+        }
+    }
+
+    private func importData() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            viewModel.importData(from: url)
+        }
     }
 }
