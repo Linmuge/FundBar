@@ -107,13 +107,49 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
     var costPrice: Double  // 本次买入成本净值
     var date: String       // 买入日期 yyyy-MM-dd
     var note: String       // 备注
+    var isDCA: Bool        // 是否定投记录
 
-    init(shares: Double, costPrice: Double, date: String = "", note: String = "") {
+    init(shares: Double, costPrice: Double, date: String = "", note: String = "", isDCA: Bool = false) {
         self.id = UUID().uuidString
         self.shares = shares
         self.costPrice = costPrice
         self.date = date
         self.note = note
+        self.isDCA = isDCA
+    }
+
+    // 向后兼容旧数据（无 isDCA 字段）
+    enum CodingKeys: String, CodingKey {
+        case id, shares, costPrice, date, note, isDCA
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        shares = try container.decode(Double.self, forKey: .shares)
+        costPrice = try container.decode(Double.self, forKey: .costPrice)
+        date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
+        note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
+        isDCA = try container.decodeIfPresent(Bool.self, forKey: .isDCA) ?? false
+    }
+}
+
+/// 定投频率
+enum DCAFrequency: String, Codable, CaseIterable {
+    case daily = "每交易日"
+    case weekly = "每周"
+    case biweekly = "每两周"
+    case monthly = "每月"
+}
+
+/// 定投计划
+struct DCAPlan: Codable, Equatable {
+    var frequency: DCAFrequency  // 定投频率
+    var amount: Double           // 每期金额（元）
+
+    init(frequency: DCAFrequency = .monthly, amount: Double = 0) {
+        self.frequency = frequency
+        self.amount = amount
     }
 }
 
@@ -124,6 +160,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     var fundType: String    // 基金类型（股票型/债券型等）
     var sortIndex: Int
     var holdings: [HoldingRecord]  // 持仓记录（支持多笔）
+    var dcaPlan: DCAPlan?          // 定投计划（可选）
 
     var id: String { code }
 
@@ -141,7 +178,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case code, name, fundType, sortIndex, shares, costPrice, holdings
+        case code, name, fundType, sortIndex, shares, costPrice, holdings, dcaPlan
     }
 
     init(from decoder: Decoder) throws {
@@ -150,6 +187,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         fundType = try container.decodeIfPresent(String.self, forKey: .fundType) ?? ""
         sortIndex = try container.decode(Int.self, forKey: .sortIndex)
+        dcaPlan = try container.decodeIfPresent(DCAPlan.self, forKey: .dcaPlan)
 
         // 优先读取 holdings 数组，超旧数据回退读 shares/costPrice
         if let h = try container.decodeIfPresent([HoldingRecord].self, forKey: .holdings), !h.isEmpty {
@@ -168,6 +206,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
         try container.encode(fundType, forKey: .fundType)
         try container.encode(sortIndex, forKey: .sortIndex)
         try container.encode(holdings, forKey: .holdings)
+        try container.encode(dcaPlan, forKey: .dcaPlan)
         // 向后兼容写入聚合值
         try container.encode(shares, forKey: .shares)
         try container.encode(costPrice, forKey: .costPrice)
@@ -214,5 +253,40 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     func profitPercent(nav: Double) -> Double {
         guard totalCost > 0 else { return 0 }
         return (profitLoss(nav: nav) / totalCost) * 100
+    }
+
+    // MARK: - 定投统计
+
+    /// 定投记录
+    var dcaRecords: [HoldingRecord] {
+        holdings.filter { $0.isDCA }
+    }
+
+    /// 定投次数
+    var dcaCount: Int {
+        dcaRecords.count
+    }
+
+    /// 定投总投入金额
+    var dcaTotalInvested: Double {
+        dcaRecords.reduce(0) { $0 + $1.shares * $1.costPrice }
+    }
+
+    /// 定投总份额
+    var dcaTotalShares: Double {
+        dcaRecords.reduce(0) { $0 + $1.shares }
+    }
+
+    /// 定投平均成本
+    var dcaAverageCost: Double {
+        guard dcaTotalShares > 0 else { return 0 }
+        return dcaTotalInvested / dcaTotalShares
+    }
+
+    /// 定投收益率
+    func dcaProfitPercent(nav: Double) -> Double {
+        guard dcaTotalInvested > 0 else { return 0 }
+        let currentValue = dcaTotalShares * nav
+        return (currentValue - dcaTotalInvested) / dcaTotalInvested * 100
     }
 }

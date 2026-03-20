@@ -319,10 +319,10 @@ final class FundViewModel: ObservableObject {
     }
 
     /// 添加一笔持仓记录
-    func addHolding(code: String, shares: Double, costPrice: Double, date: String = "", note: String = "") {
+    func addHolding(code: String, shares: Double, costPrice: Double, date: String = "", note: String = "", isDCA: Bool = false) {
         if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
             watchedFunds[index].holdings.append(
-                HoldingRecord(shares: shares, costPrice: costPrice, date: date, note: note)
+                HoldingRecord(shares: shares, costPrice: costPrice, date: date, note: note, isDCA: isDCA)
             )
         }
     }
@@ -339,6 +339,30 @@ final class FundViewModel: ObservableObject {
         if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
             watchedFunds[index].holdings = []
         }
+    }
+
+    /// 设置定投计划
+    func setDCAPlan(code: String, frequency: DCAFrequency, amount: Double) {
+        if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
+            watchedFunds[index].dcaPlan = DCAPlan(frequency: frequency, amount: amount)
+        }
+    }
+
+    /// 取消定投计划
+    func removeDCAPlan(code: String) {
+        if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
+            watchedFunds[index].dcaPlan = nil
+        }
+    }
+
+    /// 记录一笔定投买入
+    func addDCAHolding(code: String, shares: Double, costPrice: Double) {
+        let today = {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            return f.string(from: Date())
+        }()
+        addHolding(code: code, shares: shares, costPrice: costPrice, date: today, note: "定投", isDCA: true)
     }
 
     /// 获取某只基金的持仓信息
@@ -396,6 +420,92 @@ final class FundViewModel: ObservableObject {
 
         // 从基金名称解析类型并补全
         backfillFundTypesFromName()
+
+        // 自动定投（用昨日确认净值 dwjz）
+        autoExecuteDCA()
+    }
+
+    /// 自动执行定投：到期日自动按昨日确认净值买入
+    private func autoExecuteDCA() {
+        let today = Self.todayString()
+
+        for code in watchedFunds.map({ $0.code }) {
+            guard isDCADueToday(code: code) else { continue }
+            guard let wf = watchedFunds.first(where: { $0.code == code }),
+                  let plan = wf.dcaPlan else { continue }
+            guard let fund = funds.first(where: { $0.fundcode == code }) else { continue }
+
+            // 使用昨日确认净值（dwjz），未公布则跳过
+            let nav = Double(fund.dwjz) ?? 0
+            guard nav > 0 else { continue }
+
+            let shares = plan.amount / nav
+            addHolding(code: code, shares: shares, costPrice: nav, date: today, note: "定投", isDCA: true)
+        }
+    }
+
+    /// 判断某只基金今日是否应定投（供 UI 显示提醒标记）
+    func isDCADueToday(code: String) -> Bool {
+        guard let wf = watchedFunds.first(where: { $0.code == code }),
+              let plan = wf.dcaPlan, plan.amount > 0 else { return false }
+
+        // 周末不提醒
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        guard weekday >= 2 && weekday <= 6 else { return false }
+
+        // 今日已完成
+        let today = Self.todayString()
+        if wf.holdings.contains(where: { $0.isDCA && $0.date == today }) { return false }
+
+        switch plan.frequency {
+        case .daily:
+            return true
+        case .weekly:
+            return weekday == 2  // 每周一
+        case .biweekly:
+            if let lastDate = wf.dcaRecords.last?.date, !lastDate.isEmpty {
+                let f = DateFormatter()
+                f.dateFormat = "yyyy-MM-dd"
+                if let last = f.date(from: lastDate) {
+                    let days = Calendar.current.dateComponents([.day], from: last, to: Date()).day ?? 0
+                    return days >= 14
+                }
+            }
+            return weekday == 2
+        case .monthly:
+            let cal = Calendar.current
+            let month = cal.component(.month, from: Date())
+            let year = cal.component(.year, from: Date())
+            let f = DateFormatter()
+            f.dateFormat = "yyyy-MM-dd"
+            let thisMonthDone = wf.dcaRecords.contains { record in
+                guard let d = f.date(from: record.date) else { return false }
+                return cal.component(.month, from: d) == month && cal.component(.year, from: d) == year
+            }
+            return !thisMonthDone
+        }
+    }
+
+    /// 一键记录定投买入（用确认净值 dwjz）
+    func recordDCA(code: String) {
+        guard let wf = watchedFunds.first(where: { $0.code == code }),
+              let plan = wf.dcaPlan, plan.amount > 0 else { return }
+        guard let fund = funds.first(where: { $0.fundcode == code }) else { return }
+
+        // 优先使用确认净值（收盘后有值），否则用估算净值
+        let confirmedNav = Double(fund.dwjz) ?? 0
+        let nav = confirmedNav > 0 ? confirmedNav : fund.bestNav
+        guard nav > 0 else { return }
+
+        let shares = plan.amount / nav
+        let today = Self.todayString()
+        addHolding(code: code, shares: shares, costPrice: nav, date: today, note: "定投", isDCA: true)
+    }
+
+    private static func todayString() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: Date())
     }
 
     /// 从基金名称解析类型

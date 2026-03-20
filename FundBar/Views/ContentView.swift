@@ -163,6 +163,7 @@ struct ContentView: View {
                         fund: fund,
                         holding: viewModel.getWatchedFund(code: fund.fundcode),
                         historyData: viewModel.fundHistory[fund.fundcode] ?? [],
+                        hasDCAPlan: viewModel.getWatchedFund(code: fund.fundcode)?.dcaPlan != nil,
                         onDelete: {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 viewModel.removeFund(code: fund.fundcode)
@@ -208,9 +209,11 @@ struct ContentView: View {
     /// 列表最大高度
     private var listMaxHeight: CGFloat {
         let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-        // 图表展开时缩减列表高度给图表腾出空间
-        let chartReserve: CGFloat = (showCharts && viewModel.hasAnyHolding) ? 300 : 0
-        return screenHeight * 0.7 - chartReserve
+        // 图表/编辑面板展开时缩减列表高度给其他区域腾出空间
+        var reserve: CGFloat = 0
+        if showCharts && viewModel.hasAnyHolding { reserve += 300 }
+        if showEditHolding { reserve += 200 }
+        return max(screenHeight * 0.7 - reserve, 200)
     }
 
     // MARK: - Empty View

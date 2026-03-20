@@ -5,13 +5,15 @@ struct FundRowView: View {
     let fund: Fund
     let holding: WatchedFund?
     let historyData: [HistoryNav]
+    let hasDCAPlan: Bool
     let onDelete: () -> Void
     let onEditHolding: () -> Void
 
-    init(fund: Fund, holding: WatchedFund?, historyData: [HistoryNav] = [], onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
+    init(fund: Fund, holding: WatchedFund?, historyData: [HistoryNav] = [], hasDCAPlan: Bool = false, onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
         self.fund = fund
         self.holding = holding
         self.historyData = historyData
+        self.hasDCAPlan = hasDCAPlan
         self.onDelete = onDelete
         self.onEditHolding = onEditHolding
     }
@@ -45,6 +47,15 @@ struct FundRowView: View {
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
                             .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 3))
+                    }
+
+                    if hasDCAPlan {
+                        Text("定投")
+                            .font(.system(size: 8, weight: .medium))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(.orange, in: RoundedRectangle(cornerRadius: 3))
                     }
                 }
             }
