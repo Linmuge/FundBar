@@ -10,7 +10,7 @@ struct FundBarApp: App {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "chart.line.uptrend.xyaxis")
-                if !viewModel.funds.isEmpty {
+                if !viewModel.funds.isEmpty, !viewModel.menuBarText.isEmpty {
                     Text(viewModel.menuBarText)
                         .font(.system(size: 11).monospacedDigit())
                         .foregroundStyle(viewModel.menuBarColor)

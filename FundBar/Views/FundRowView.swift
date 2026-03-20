@@ -29,6 +29,15 @@ struct FundRowView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
 
+                    if let h = holding, !h.fundType.isEmpty {
+                        Text(h.fundType)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(fundTypeColor(h.fundType), in: RoundedRectangle(cornerRadius: 3))
+                    }
+
                     if let h = holding, h.hasHolding {
                         Text("\(String(format: "%.0f", h.shares))份")
                             .font(.system(size: 10))
@@ -113,6 +122,17 @@ struct FundRowView: View {
         } else if fund.isDown {
             return .green
         }
+        return .secondary
+    }
+
+    private func fundTypeColor(_ type: String) -> Color {
+        if type.contains("股票") { return .orange }
+        if type.contains("混合") { return .purple }
+        if type.contains("债券") { return .blue }
+        if type.contains("指数") { return .teal }
+        if type.contains("货币") { return .gray }
+        if type.contains("QDII") { return .indigo }
+        if type.contains("FOF") { return .mint }
         return .secondary
     }
 }

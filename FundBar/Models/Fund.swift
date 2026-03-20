@@ -5,6 +5,22 @@ enum DataSource: String, Codable, CaseIterable {
     case tiantian = "天天基金"
 }
 
+/// 菜单栏显示模式
+enum MenuBarDisplayMode: String, Codable, CaseIterable {
+    case todayProfit = "今日盈亏"       // 有持仓时显示今日预估盈亏
+    case changePercent = "平均涨跌幅"   // 显示所有基金平均涨跌幅
+    case totalProfit = "总盈亏"        // 显示持仓总盈亏
+    case hidden = "仅图标"             // 不显示文字
+}
+
+/// 排序模式
+enum FundSortMode: String, Codable, CaseIterable {
+    case manual = "手动排序"
+    case changeDesc = "涨幅优先"
+    case changeAsc = "跌幅优先"
+    case profitDesc = "盈亏优先"
+}
+
 /// 基金估值数据模型 - 对应 API 返回的数据
 struct Fund: Identifiable, Codable, Equatable {
     let fundcode: String   // 基金代码
@@ -87,7 +103,8 @@ struct Fund: Identifiable, Codable, Equatable {
 /// 自选基金 - 用于持久化存储（含持仓信息）
 struct WatchedFund: Codable, Identifiable, Equatable {
     let code: String
-    var name: String        // 基金名称（持久化，解决部分数据源不返回名称）
+    var name: String        // 基金名称（持久化）
+    var fundType: String    // 基金类型（股票型/债券型等）
     var sortIndex: Int
     var shares: Double      // 持有份额（0 表示未录入）
     var costPrice: Double   // 持仓成本净值（0 表示未录入）
@@ -95,22 +112,24 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     var id: String { code }
 
     // 兼容旧版数据（无 name 字段）
-    init(code: String, name: String = "", sortIndex: Int, shares: Double, costPrice: Double) {
+    init(code: String, name: String = "", fundType: String = "", sortIndex: Int, shares: Double, costPrice: Double) {
         self.code = code
         self.name = name
+        self.fundType = fundType
         self.sortIndex = sortIndex
         self.shares = shares
         self.costPrice = costPrice
     }
 
     enum CodingKeys: String, CodingKey {
-        case code, name, sortIndex, shares, costPrice
+        case code, name, fundType, sortIndex, shares, costPrice
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         code = try container.decode(String.self, forKey: .code)
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        fundType = try container.decodeIfPresent(String.self, forKey: .fundType) ?? ""
         sortIndex = try container.decode(Int.self, forKey: .sortIndex)
         shares = try container.decode(Double.self, forKey: .shares)
         costPrice = try container.decode(Double.self, forKey: .costPrice)

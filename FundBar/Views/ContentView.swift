@@ -83,6 +83,28 @@ struct ContentView: View {
 
             Spacer()
 
+            // 排序按钮
+            Menu {
+                ForEach(FundSortMode.allCases, id: \.self) { mode in
+                    Button {
+                        viewModel.sortMode = mode
+                    } label: {
+                        HStack {
+                            Text(mode.rawValue)
+                            if viewModel.sortMode == mode {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(viewModel.sortMode == .manual ? .secondary : .blue)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
             // 刷新按钮
             Button {
                 Task {
@@ -125,9 +147,10 @@ struct ContentView: View {
     // MARK: - Fund List
 
     private var fundListView: some View {
-        ScrollView {
+        let displayFunds = viewModel.sortedFunds
+        return ScrollView {
             LazyVStack(spacing: 0) {
-                ForEach(viewModel.funds) { fund in
+                ForEach(displayFunds) { fund in
                     FundRowView(
                         fund: fund,
                         holding: viewModel.getWatchedFund(code: fund.fundcode),
@@ -148,7 +171,7 @@ struct ContentView: View {
                         }
                     )
 
-                    if fund.id != viewModel.funds.last?.id {
+                    if fund.id != displayFunds.last?.id {
                         Divider()
                             .padding(.leading, 14)
                     }
@@ -309,6 +332,21 @@ struct ContentView: View {
                     set: { viewModel.launchAtLogin = $0 }
                 ))
                 .toggleStyle(.switch)
+                .controlSize(.small)
+            }
+
+            // 菜单栏显示
+            HStack {
+                Label("菜单栏显示", systemImage: "menubar.rectangle")
+                    .font(.system(size: 12))
+                Spacer()
+                Picker("", selection: $viewModel.menuBarMode) {
+                    ForEach(MenuBarDisplayMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .fixedSize()
                 .controlSize(.small)
             }
 

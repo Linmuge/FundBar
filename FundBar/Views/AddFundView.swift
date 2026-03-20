@@ -14,6 +14,7 @@ struct AddFundView: View {
     @State private var searchResults: [FundSearchResult] = []
     @State private var isSearching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var selectedFundType = ""
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -72,6 +73,7 @@ struct AddFundView: View {
                         ForEach(searchResults.prefix(8)) { result in
                             Button {
                                 searchText = result.code
+                                selectedFundType = result.type
                                 searchResults = []
                             } label: {
                                 HStack {
@@ -239,7 +241,7 @@ struct AddFundView: View {
         let costPrice = Double(costPriceText) ?? 0
 
         Task {
-            let success = await viewModel.addFund(code: code, shares: shares, costPrice: costPrice)
+            let success = await viewModel.addFund(code: code, shares: shares, costPrice: costPrice, fundType: selectedFundType)
             isAdding = false
 
             if success {
@@ -250,6 +252,7 @@ struct AddFundView: View {
                 searchText = ""
                 sharesText = ""
                 costPriceText = ""
+                selectedFundType = ""
                 searchResults = []
                 isFocused = true
 

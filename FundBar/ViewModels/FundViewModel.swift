@@ -44,6 +44,8 @@ final class FundViewModel: ObservableObject {
     private let dataSourceKey = "data_source"
     private let launchAtLoginKey = "launch_at_login"
     private let notifyThresholdKey = "notify_threshold"
+    private let menuBarModeKey = "menu_bar_mode"
+    private let sortModeKey = "sort_mode"
 
     // MARK: - Computed Properties
 
@@ -52,29 +54,76 @@ final class FundViewModel: ObservableObject {
         watchedFunds.map(\.code)
     }
 
+    /// 菜单栏显示模式
+    @Published var menuBarMode: MenuBarDisplayMode = .todayProfit {
+        didSet { UserDefaults.standard.set(menuBarMode.rawValue, forKey: menuBarModeKey) }
+    }
+
+    /// 排序模式
+    @Published var sortMode: FundSortMode = .manual {
+        didSet { UserDefaults.standard.set(sortMode.rawValue, forKey: sortModeKey) }
+    }
+
     /// 菜单栏显示文字
     var menuBarText: String {
-        if hasAnyHolding {
-            let ep = todayEstimatedProfit
-            let sign = ep >= 0 ? "+" : ""
-            return "\(sign)\(String(format: "%.0f", ep))"
-        } else {
+        switch menuBarMode {
+        case .todayProfit:
+            if hasAnyHolding {
+                let ep = todayEstimatedProfit
+                let sign = ep >= 0 ? "+" : ""
+                return "\(sign)\(String(format: "%.0f", ep))"
+            } else {
+                return totalChangeDisplay
+            }
+        case .changePercent:
             return totalChangeDisplay
+        case .totalProfit:
+            if hasAnyHolding {
+                let pl = totalProfitLoss
+                let sign = pl >= 0 ? "+" : ""
+                return "\(sign)\(String(format: "%.0f", pl))"
+            } else {
+                return "--"
+            }
+        case .hidden:
+            return ""
         }
     }
 
     /// 菜单栏文字颜色
     var menuBarColor: Color {
-        if hasAnyHolding {
-            let ep = todayEstimatedProfit
-            if ep > 0 { return .red }
-            if ep < 0 { return .green }
+        switch menuBarMode {
+        case .todayProfit:
+            let val = hasAnyHolding ? todayEstimatedProfit : totalChangePercent
+            if val > 0 { return .red }
+            if val < 0 { return .green }
             return .secondary
-        } else {
+        case .changePercent:
             let avg = totalChangePercent
             if avg > 0 { return .red }
             if avg < 0 { return .green }
             return .secondary
+        case .totalProfit:
+            let pl = totalProfitLoss
+            if pl > 0 { return .red }
+            if pl < 0 { return .green }
+            return .secondary
+        case .hidden:
+            return .secondary
+        }
+    }
+
+    /// 排序后的基金列表
+    var sortedFunds: [Fund] {
+        switch sortMode {
+        case .manual:
+            return funds
+        case .changeDesc:
+            return funds.sorted { $0.changePercent > $1.changePercent }
+        case .changeAsc:
+            return funds.sorted { $0.changePercent < $1.changePercent }
+        case .profitDesc:
+            return funds.sorted { fundProfit($0) > fundProfit($1) }
         }
     }
 
@@ -157,6 +206,13 @@ final class FundViewModel: ObservableObject {
         }
     }
 
+    /// 单只基金盈亏（用于排序）
+    func fundProfit(_ fund: Fund) -> Double {
+        guard let wf = watchedFunds.first(where: { $0.code == fund.fundcode }),
+              wf.hasHolding else { return 0 }
+        return wf.profitLoss(nav: fund.bestNav)
+    }
+
     /// 是否在交易时间
     var isTradingTime: Bool {
         let calendar = Calendar.current
@@ -200,6 +256,18 @@ final class FundViewModel: ObservableObject {
         let savedThreshold = UserDefaults.standard.double(forKey: notifyThresholdKey)
         _notifyThreshold = Published(initialValue: savedThreshold)
 
+        // 恢复菜单栏显示模式
+        if let savedMode = UserDefaults.standard.string(forKey: menuBarModeKey),
+           let mode = MenuBarDisplayMode(rawValue: savedMode) {
+            _menuBarMode = Published(initialValue: mode)
+        }
+
+        // 恢复排序模式
+        if let savedSort = UserDefaults.standard.string(forKey: sortModeKey),
+           let sort = FundSortMode(rawValue: savedSort) {
+            _sortMode = Published(initialValue: sort)
+        }
+
         startAutoRefresh()
         Task { await refresh() }
     }
@@ -211,7 +279,7 @@ final class FundViewModel: ObservableObject {
     // MARK: - Public Methods
 
     /// 添加自选基金
-    func addFund(code: String, shares: Double = 0, costPrice: Double = 0) async -> Bool {
+    func addFund(code: String, shares: Double = 0, costPrice: Double = 0, fundType: String = "") async -> Bool {
         let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedCode.count == 6,
               trimmedCode.allSatisfy({ $0.isNumber }) else {
@@ -229,6 +297,7 @@ final class FundViewModel: ObservableObject {
             let newWatched = WatchedFund(
                 code: trimmedCode,
                 name: fund.name,
+                fundType: fundType,
                 sortIndex: watchedFunds.count,
                 shares: shares,
                 costPrice: costPrice
@@ -308,6 +377,44 @@ final class FundViewModel: ObservableObject {
 
         // 异步加载历史数据（不阻塞主刷新）
         Task { await fetchHistoryData(codes: codes) }
+
+        // 从基金名称解析类型并补全
+        backfillFundTypesFromName()
+    }
+
+    /// 从基金名称解析类型
+    private func backfillFundTypesFromName() {
+        var changed = false
+        for i in 0..<watchedFunds.count {
+            if watchedFunds[i].fundType.isEmpty {
+                if let fund = funds.first(where: { $0.fundcode == watchedFunds[i].code }) {
+                    let parsed = parseFundType(from: fund.name)
+                    if !parsed.isEmpty {
+                        watchedFunds[i].fundType = parsed
+                        changed = true
+                    }
+                }
+            }
+        }
+        // changed 时 watchedFunds.didSet 已自动持久化
+    }
+
+    /// 从基金名称中提取类型关键词
+    private func parseFundType(from name: String) -> String {
+        if name.contains("QDII") { return "QDII" }
+        if name.contains("FOF") || name.contains("养老目标") { return "FOF" }
+        if name.contains("货币") { return "货币型" }
+        if name.contains("纯债") || name.contains("信用债") || name.contains("可转债") || name.contains("债券") {
+            return "债券型"
+        }
+        if name.contains("ETF") || name.contains("指数") || name.contains("联接") || name.contains("跟踪") {
+            return "指数型"
+        }
+        if name.contains("股票") { return "股票型" }
+        if name.contains("混合") || name.contains("灵活配置") || name.contains("平衡") || name.contains("稳健") || name.contains("优选") || name.contains("成长") || name.contains("价值") || name.contains("精选") {
+            return "混合型"
+        }
+        return ""
     }
 
     /// 获取所有基金的7日历史净值
