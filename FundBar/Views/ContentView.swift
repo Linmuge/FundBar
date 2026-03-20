@@ -168,42 +168,56 @@ struct ContentView: View {
 
     private var summaryView: some View {
         HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text("总收益率")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    Text("\(viewModel.funds.count) 只基金")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                }
-
+            VStack(alignment: .leading, spacing: 3) {
                 if viewModel.hasAnyHolding {
+                    // 总市值
                     HStack(spacing: 4) {
-                        Text("市值")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                        Text(String(format: "%.2f", viewModel.totalMarketValue))
-                            .font(.system(size: 10).monospacedDigit())
+                        Text("总市值")
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
+                        Text(String(format: "%.2f", viewModel.totalMarketValue))
+                            .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    }
 
-                        Text("盈亏")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .padding(.leading, 4)
+                    // 今日预估 + 持仓盈亏
+                    HStack(spacing: 8) {
+                        let ep = viewModel.todayEstimatedProfit
+                        let epSign = ep >= 0 ? "+" : ""
+                        HStack(spacing: 2) {
+                            Text("今日")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Text("\(epSign)\(String(format: "%.2f", ep))")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(ep >= 0 ? .red : .green)
+                        }
+
                         let pl = viewModel.totalProfitLoss
                         let plSign = pl >= 0 ? "+" : ""
-                        Text("\(plSign)\(String(format: "%.2f", pl))")
-                            .font(.system(size: 10, weight: .medium).monospacedDigit())
-                            .foregroundStyle(pl >= 0 ? .red : .green)
+                        HStack(spacing: 2) {
+                            Text("盈亏")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            Text("\(plSign)\(String(format: "%.2f", pl))")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(pl >= 0 ? .red : .green)
+                        }
+                    }
+                } else {
+                    HStack(spacing: 6) {
+                        Text("总收益率")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Text("\(viewModel.funds.count) 只基金")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 2) {
+            VStack(alignment: .trailing, spacing: 3) {
                 Text(viewModel.totalChangeDisplay)
                     .font(.system(size: 13, weight: .semibold).monospacedDigit())
                     .foregroundStyle(summaryColor)

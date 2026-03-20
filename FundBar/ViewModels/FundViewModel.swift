@@ -99,6 +99,15 @@ final class FundViewModel: ObservableObject {
         return (totalProfitLoss / totalCost) * 100
     }
 
+    /// 今日预估盈亏金额（基于持仓份额 * 昨日净值 * 涨跌幅%）
+    var todayEstimatedProfit: Double {
+        watchedFunds.reduce(0) { total, wf in
+            guard wf.hasHolding,
+                  let fund = funds.first(where: { $0.fundcode == wf.code }) else { return total }
+            let yesterdayNav = fund.unitValue // dwjz = 上一个已发布净值
+            return total + wf.shares * yesterdayNav * (fund.changePercent / 100)
+        }
+    }
     /// 是否在交易时间
     var isTradingTime: Bool {
         let calendar = Calendar.current

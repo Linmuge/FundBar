@@ -3,7 +3,7 @@ import Foundation
 /// 数据源类型
 enum DataSource: String, Codable, CaseIterable {
     case tiantian = "天天基金"
-    case danjuan = "蛋卷基金"
+    case eastmoney = "东方财富"
 }
 
 /// 基金估值数据模型 - 对应 API 返回的数据
@@ -52,12 +52,11 @@ struct Fund: Identifiable, Codable, Equatable {
         return estimatedValue
     }
 
-    /// 当日净值是否已更新
+    /// 当日净值是否已更新（jzrq 与 gztime 同日 = 基金公司已发布实际净值）
     var isNavUpdatedToday: Bool {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let today = formatter.string(from: Date())
-        return jzrq == today
+        guard !jzrq.isEmpty, gztime.count >= 10 else { return false }
+        let tradingDay = String(gztime.prefix(10)) // "yyyy-MM-dd"
+        return jzrq == tradingDay
     }
 
     /// 涨跌幅数值

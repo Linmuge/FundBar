@@ -25,11 +25,11 @@ final class FundService {
         self.session = session
 
         let tiantian = TiantianFundSource(session: session)
-        let danjuan = DanjuanFundSource(session: session)
+        let eastmoney = EastMoneyFundSource(session: session)
 
         self.sources = [
             .tiantian: tiantian,
-            .danjuan: danjuan
+            .eastmoney: eastmoney
         ]
         self.currentSource = tiantian
     }
@@ -117,10 +117,10 @@ final class TiantianFundSource: FundDataSource {
     }
 }
 
-// MARK: - 蛋卷基金数据源
+// MARK: - 东方财富数据源
 
-final class DanjuanFundSource: FundDataSource {
-    let name = "蛋卷基金"
+final class EastMoneyFundSource: FundDataSource {
+    let name = "东方财富"
     private let session: URLSession
 
     init(session: URLSession) {
@@ -128,14 +128,15 @@ final class DanjuanFundSource: FundDataSource {
     }
 
     func fetchEstimate(code: String) async throws -> Fund {
-        let urlString = "https://danjuanfunds.com/djapi/fund/estimate-nav/\(code)"
+        // 用历史净值 API 获取最新已发布净值
+        let urlString = "https://api.fund.eastmoney.com/f10/lsjz?fundCode=\(code)&pageIndex=1&pageSize=1&_=\(Int(Date().timeIntervalSince1970 * 1000))"
         guard let url = URL(string: urlString) else {
             throw FundError.invalidURL
         }
 
         var request = URLRequest(url: url)
+        request.setValue("https://fund.eastmoney.com", forHTTPHeaderField: "Referer")
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
-        request.setValue("https://danjuanfunds.com", forHTTPHeaderField: "Referer")
 
         let (data, response) = try await session.data(for: request)
 
@@ -144,53 +145,44 @@ final class DanjuanFundSource: FundDataSource {
             throw FundError.serverError
         }
 
-        let djResponse = try JSONDecoder().decode(DanjuanResponse.self, from: data)
+        let emResponse = try JSONDecoder().decode(EastMoneyResponse.self, from: data)
 
-        guard let item = djResponse.data else {
+        guard let item = emResponse.Data?.LSJZList?.first else {
             throw FundError.decodingError
         }
 
+        let nav = item.DWJZ ?? "0"
+        let changeRate = item.JZZZL ?? "0"
+        let navDate = item.FSRQ ?? ""
+
         return Fund(
-            fundcode: item.fundCode,
-            name: item.name,
-            dwjz: item.nav ?? "0",
-            gsz: item.estimateNav ?? item.nav ?? "0",
-            gszzl: item.estimateNavGrtl ?? "0",
-            gztime: item.estimateNavDate ?? "",
-            jzrq: item.navDate ?? ""
+            fundcode: code,
+            name: emResponse.Data?.FundType ?? code,
+            dwjz: nav,
+            gsz: nav,       // 历史净值源无估算值，用实际净值
+            gszzl: changeRate,
+            gztime: navDate,
+            jzrq: navDate
         )
     }
 }
 
-/// 蛋卷基金 API 响应模型
-private struct DanjuanResponse: Codable {
-    let resultCode: Int?
-    let data: DanjuanFundData?
-
-    enum CodingKeys: String, CodingKey {
-        case resultCode = "result_code"
-        case data
-    }
+/// 东方财富 API 响应模型
+private struct EastMoneyResponse: Codable {
+    let Data: EastMoneyData?
+    let ErrCode: Int?
 }
 
-private struct DanjuanFundData: Codable {
-    let fundCode: String
-    let name: String
-    let nav: String?
-    let navDate: String?
-    let estimateNav: String?
-    let estimateNavGrtl: String?
-    let estimateNavDate: String?
+private struct EastMoneyData: Codable {
+    let LSJZList: [EastMoneyNavItem]?
+    let FundType: String?
+}
 
-    enum CodingKeys: String, CodingKey {
-        case fundCode = "fund_code"
-        case name
-        case nav
-        case navDate = "nav_date"
-        case estimateNav = "estimate_nav"
-        case estimateNavGrtl = "estimate_nav_grtl"
-        case estimateNavDate = "estimate_nav_date"
-    }
+private struct EastMoneyNavItem: Codable {
+    let FSRQ: String?   // 净值日期
+    let DWJZ: String?   // 单位净值
+    let LJJZ: String?   // 累计净值
+    let JZZZL: String?  // 净值增长率
 }
 
 /// 基金服务错误类型
@@ -213,3 +205,4 @@ enum FundError: LocalizedError {
         }
     }
 }
+

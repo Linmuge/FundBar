@@ -5,13 +5,16 @@ struct AddFundView: View {
     @ObservedObject var viewModel: FundViewModel
     @Binding var isPresented: Bool
     @State private var fundCode = ""
+    @State private var sharesText = ""
+    @State private var costPriceText = ""
     @State private var isAdding = false
     @State private var showError = false
     @State private var errorText = ""
+    @State private var successMessage = ""
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 14) {
             // 标题
             HStack {
                 Text("添加基金")
@@ -27,9 +30,9 @@ struct AddFundView: View {
                 .buttonStyle(.plain)
             }
 
-            // 输入框
+            // 基金代码输入
             HStack(spacing: 8) {
-                TextField("请输入6位基金代码", text: $fundCode)
+                TextField("6位基金代码", text: $fundCode)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 13).monospacedDigit())
                     .focused($isFocused)
@@ -37,7 +40,6 @@ struct AddFundView: View {
                         addFund()
                     }
                     .onChange(of: fundCode) { _, newValue in
-                        // 限制只能输入数字，最多6位
                         let filtered = String(newValue.filter { $0.isNumber }.prefix(6))
                         if filtered != newValue {
                             fundCode = filtered
@@ -59,6 +61,39 @@ struct AddFundView: View {
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
                 .disabled(fundCode.count != 6 || isAdding)
+            }
+
+            // 持仓信息（可选）
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("份额")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    TextField("可选", text: $sharesText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospacedDigit())
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("成本净值")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                    TextField("可选", text: $costPriceText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospacedDigit())
+                }
+            }
+
+            // 成功提示
+            if !successMessage.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10))
+                    Text(successMessage)
+                        .font(.system(size: 11))
+                }
+                .foregroundStyle(.green)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             // 错误提示
@@ -93,14 +128,31 @@ struct AddFundView: View {
 
         isAdding = true
         showError = false
+        successMessage = ""
+
+        let shares = Double(sharesText) ?? 0
+        let costPrice = Double(costPriceText) ?? 0
 
         Task {
-            let success = await viewModel.addFund(code: fundCode)
+            let success = await viewModel.addFund(code: fundCode, shares: shares, costPrice: costPrice)
             isAdding = false
 
             if success {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    successMessage = "已添加 \(fundCode)"
+                }
+                // 清空输入，保持面板开启以继续添加
                 fundCode = ""
-                isPresented = false
+                sharesText = ""
+                costPriceText = ""
+                isFocused = true
+
+                // 2秒后自动隐藏成功提示
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        successMessage = ""
+                    }
+                }
             } else {
                 errorText = viewModel.errorMessage ?? "添加失败"
                 withAnimation(.easeInOut(duration: 0.2)) {
