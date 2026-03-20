@@ -10,7 +10,7 @@ final class FundViewModel: ObservableObject {
     // MARK: - Published Properties
 
     @Published var funds: [Fund] = []
-    @Published var fundHistory: [String: [Double]] = [:]  // code -> 7日净值列表
+    @Published var fundHistory: [String: [HistoryNav]] = [:]  // code -> 7日历史净值
     @Published var isLoading = false
     @Published var lastUpdateTime: Date?
     @Published var errorMessage: String?
@@ -46,6 +46,7 @@ final class FundViewModel: ObservableObject {
     private let notifyThresholdKey = "notify_threshold"
     private let menuBarModeKey = "menu_bar_mode"
     private let sortModeKey = "sort_mode"
+    static let showChartsKey = "showCharts"
 
     // MARK: - Computed Properties
 
@@ -317,11 +318,26 @@ final class FundViewModel: ObservableObject {
         funds.removeAll { $0.fundcode == code }
     }
 
-    /// 更新持仓信息
-    func updateHolding(code: String, shares: Double, costPrice: Double) {
+    /// 添加一笔持仓记录
+    func addHolding(code: String, shares: Double, costPrice: Double, date: String = "", note: String = "") {
         if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
-            watchedFunds[index].shares = shares
-            watchedFunds[index].costPrice = costPrice
+            watchedFunds[index].holdings.append(
+                HoldingRecord(shares: shares, costPrice: costPrice, date: date, note: note)
+            )
+        }
+    }
+
+    /// 移除一笔持仓记录
+    func removeHolding(code: String, recordId: String) {
+        if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
+            watchedFunds[index].holdings.removeAll { $0.id == recordId }
+        }
+    }
+
+    /// 清空持仓
+    func clearHoldings(code: String) {
+        if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
+            watchedFunds[index].holdings = []
         }
     }
 
@@ -401,16 +417,21 @@ final class FundViewModel: ObservableObject {
 
     /// 从基金名称中提取类型关键词
     private func parseFundType(from name: String) -> String {
-        if name.contains("QDII") { return "QDII" }
-        if name.contains("FOF") || name.contains("养老目标") { return "FOF" }
+        // 货币/债券优先（不会被混淆）
         if name.contains("货币") { return "货币型" }
         if name.contains("纯债") || name.contains("信用债") || name.contains("可转债") || name.contains("债券") {
             return "债券型"
         }
+        // QDII/FOF 优先（可能包含"混合"等关键词）
+        if name.contains("QDII") { return "QDII" }
+        if name.contains("FOF") || name.contains("养老目标") { return "FOF" }
+        // 指数型优先（可能名称含"股票"但实际是指数）
         if name.contains("ETF") || name.contains("指数") || name.contains("联接") || name.contains("跟踪") {
             return "指数型"
         }
+        // 股票型优先于混合型（避免"成长精选股票型"被匹配为混合）
         if name.contains("股票") { return "股票型" }
+        // 混合型最后（关键词较广泛）
         if name.contains("混合") || name.contains("灵活配置") || name.contains("平衡") || name.contains("稳健") || name.contains("优选") || name.contains("成长") || name.contains("价值") || name.contains("精选") {
             return "混合型"
         }
@@ -419,21 +440,19 @@ final class FundViewModel: ObservableObject {
 
     /// 获取所有基金的7日历史净值
     private func fetchHistoryData(codes: [String]) async {
-        var results: [(String, [Double])] = []
-        await withTaskGroup(of: (String, [Double]).self) { group in
+        var results: [(String, [HistoryNav])] = []
+        await withTaskGroup(of: (String, [HistoryNav]).self) { group in
             for code in codes {
-                // 已有数据的跳过
                 if fundHistory[code] != nil { continue }
                 group.addTask {
                     let history = await self.service.fetchHistory(code: code, days: 7)
-                    return (code, history.map(\.nav))
+                    return (code, history)
                 }
             }
             for await result in group {
                 results.append(result)
             }
         }
-        // 统一在 @MainActor 上赋值
         for (code, navs) in results {
             if !navs.isEmpty {
                 fundHistory[code] = navs
@@ -523,7 +542,7 @@ final class FundViewModel: ObservableObject {
             service.switchSource(to: source)
             UserDefaults.standard.set(source.rawValue, forKey: dataSourceKey)
         }
-        fundHistory = [:]  // 清空历史数据以重新加载
+        _fundHistory = Published(wrappedValue: [:])  // 清空历史数据以重新加载
         Task { await refresh() }
     }
 

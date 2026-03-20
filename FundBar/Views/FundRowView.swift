@@ -4,11 +4,11 @@ import SwiftUI
 struct FundRowView: View {
     let fund: Fund
     let holding: WatchedFund?
-    let historyData: [Double]
+    let historyData: [HistoryNav]
     let onDelete: () -> Void
     let onEditHolding: () -> Void
 
-    init(fund: Fund, holding: WatchedFund?, historyData: [Double] = [], onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
+    init(fund: Fund, holding: WatchedFund?, historyData: [HistoryNav] = [], onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
         self.fund = fund
         self.holding = holding
         self.historyData = historyData

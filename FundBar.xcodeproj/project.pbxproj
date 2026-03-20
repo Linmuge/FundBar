@@ -17,6 +17,8 @@
 		AA000009 /* EditHoldingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000011 /* EditHoldingView.swift */; };
 		AA000010 /* MiniChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000012 /* MiniChartView.swift */; };
 		AA000011 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000013 /* NotificationService.swift */; };
+		AA000012 /* HoldingPieView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000014 /* HoldingPieView.swift */; };
+		AA000013 /* ProfitChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000015 /* ProfitChartView.swift */; };
 		AA000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB000008 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -34,6 +36,8 @@
 		AB000011 /* EditHoldingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditHoldingView.swift; sourceTree = "<group>"; };
 		AB000012 /* MiniChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniChartView.swift; sourceTree = "<group>"; };
 		AB000013 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		AB000014 /* HoldingPieView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldingPieView.swift; sourceTree = "<group>"; };
+		AB000015 /* ProfitChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfitChartView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +106,8 @@
 				AB000007 /* AddFundView.swift */,
 				AB000011 /* EditHoldingView.swift */,
 				AB000012 /* MiniChartView.swift */,
+				AB000014 /* HoldingPieView.swift */,
+				AB000015 /* ProfitChartView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -193,6 +199,8 @@
 				AA000009 /* EditHoldingView.swift in Sources */,
 				AA000010 /* MiniChartView.swift in Sources */,
 				AA000011 /* NotificationService.swift in Sources */,
+				AA000012 /* HoldingPieView.swift in Sources */,
+				AA000013 /* ProfitChartView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -330,7 +338,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fundbar.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -353,7 +361,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.0;
+				MARKETING_VERSION = 2.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fundbar.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

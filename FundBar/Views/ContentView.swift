@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var editingFundName: String?
     @State private var showEditHolding = false
     @State private var showSettings = false
+    @State private var showCharts = UserDefaults.standard.bool(forKey: FundViewModel.showChartsKey)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +55,13 @@ struct ContentView: View {
             // 设置区域
             if showSettings {
                 settingsView
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                Divider()
+            }
+
+            // 图表区域
+            if showCharts && viewModel.hasAnyHolding {
+                chartsSection
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                 Divider()
             }
@@ -200,7 +208,9 @@ struct ContentView: View {
     /// 列表最大高度
     private var listMaxHeight: CGFloat {
         let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-        return screenHeight * 0.7
+        // 图表展开时缩减列表高度给图表腾出空间
+        let chartReserve: CGFloat = (showCharts && viewModel.hasAnyHolding) ? 300 : 0
+        return screenHeight * 0.7 - chartReserve
     }
 
     // MARK: - Empty View
@@ -235,6 +245,19 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                         Text(String(format: "%.2f", viewModel.totalMarketValue))
                             .font(.system(size: 12, weight: .semibold).monospacedDigit())
+
+                        // 图表切换
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showCharts.toggle()
+                                UserDefaults.standard.set(showCharts, forKey: FundViewModel.showChartsKey)
+                            }
+                        } label: {
+                            Image(systemName: showCharts ? "chart.pie.fill" : "chart.pie")
+                                .font(.system(size: 10))
+                                .foregroundColor(showCharts ? .blue : .secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     HStack(spacing: 8) {
@@ -300,6 +323,62 @@ struct ContentView: View {
         if avg > 0 { return .red }
         if avg < 0 { return .green }
         return .secondary
+    }
+
+    // MARK: - Charts (#7 走势图 + #13 饼图)
+
+    private var chartsSection: some View {
+        VStack(spacing: 0) {
+            let profitData = buildProfitData()
+            if !profitData.isEmpty {
+                ProfitChartView(data: profitData)
+                Divider()
+            }
+
+            let pieSlices = buildPieSlices()
+            if !pieSlices.isEmpty {
+                HoldingPieView(slices: pieSlices)
+            }
+        }
+    }
+
+    private func buildProfitData() -> [ProfitChartView.ProfitPoint] {
+        let holdingFunds = viewModel.watchedFunds.filter { $0.hasHolding }
+        guard !holdingFunds.isEmpty else { return [] }
+
+        var dateSet: Set<String> = []
+        for wf in holdingFunds {
+            if let history = viewModel.fundHistory[wf.code] {
+                for h in history { dateSet.insert(h.date) }
+            }
+        }
+        let dates = dateSet.sorted()
+        guard dates.count >= 2 else { return [] }
+
+        return dates.map { date in
+            let totalProfit = holdingFunds.reduce(0.0) { sum, wf in
+                guard let history = viewModel.fundHistory[wf.code],
+                      let nav = history.first(where: { $0.date == date })?.nav else { return sum }
+                return sum + wf.profitLoss(nav: nav)
+            }
+            return ProfitChartView.ProfitPoint(date: date, profit: totalProfit)
+        }
+    }
+
+    private func buildPieSlices() -> [HoldingPieView.PieSlice] {
+        let colors: [Color] = [.orange, .blue, .purple, .teal, .pink, .indigo, .mint, .cyan, .yellow, .brown]
+        var slices: [HoldingPieView.PieSlice] = []
+        for (i, wf) in viewModel.watchedFunds.enumerated() where wf.hasHolding {
+            if let fund = viewModel.funds.first(where: { $0.fundcode == wf.code }) {
+                let mv = wf.marketValue(nav: fund.bestNav)
+                slices.append(HoldingPieView.PieSlice(
+                    name: wf.name.isEmpty ? wf.code : String(wf.name.prefix(6)),
+                    value: mv,
+                    color: colors[i % colors.count]
+                ))
+            }
+        }
+        return slices
     }
 
     // MARK: - Settings

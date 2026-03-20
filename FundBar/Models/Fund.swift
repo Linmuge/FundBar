@@ -100,29 +100,48 @@ struct Fund: Identifiable, Codable, Equatable {
     }
 }
 
+/// 单笔持仓记录
+struct HoldingRecord: Codable, Identifiable, Equatable {
+    let id: String  // UUID 字符串（而非 UUID 类型）以兼容 Codable 自动合成
+    var shares: Double     // 本次买入份额
+    var costPrice: Double  // 本次买入成本净值
+    var date: String       // 买入日期 yyyy-MM-dd
+    var note: String       // 备注
+
+    init(shares: Double, costPrice: Double, date: String = "", note: String = "") {
+        self.id = UUID().uuidString
+        self.shares = shares
+        self.costPrice = costPrice
+        self.date = date
+        self.note = note
+    }
+}
+
 /// 自选基金 - 用于持久化存储（含持仓信息）
 struct WatchedFund: Codable, Identifiable, Equatable {
     let code: String
     var name: String        // 基金名称（持久化）
     var fundType: String    // 基金类型（股票型/债券型等）
     var sortIndex: Int
-    var shares: Double      // 持有份额（0 表示未录入）
-    var costPrice: Double   // 持仓成本净值（0 表示未录入）
+    var holdings: [HoldingRecord]  // 持仓记录（支持多笔）
 
     var id: String { code }
 
-    // 兼容旧版数据（无 name 字段）
-    init(code: String, name: String = "", fundType: String = "", sortIndex: Int, shares: Double, costPrice: Double) {
+    init(code: String, name: String = "", fundType: String = "", sortIndex: Int, shares: Double = 0, costPrice: Double = 0) {
         self.code = code
         self.name = name
         self.fundType = fundType
         self.sortIndex = sortIndex
-        self.shares = shares
-        self.costPrice = costPrice
+        // 向后兼容：单笔持仓转换为 holdings 数组
+        if shares > 0 && costPrice > 0 {
+            self.holdings = [HoldingRecord(shares: shares, costPrice: costPrice)]
+        } else {
+            self.holdings = []
+        }
     }
 
     enum CodingKeys: String, CodingKey {
-        case code, name, fundType, sortIndex, shares, costPrice
+        case code, name, fundType, sortIndex, shares, costPrice, holdings
     }
 
     init(from decoder: Decoder) throws {
@@ -131,13 +150,49 @@ struct WatchedFund: Codable, Identifiable, Equatable {
         name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
         fundType = try container.decodeIfPresent(String.self, forKey: .fundType) ?? ""
         sortIndex = try container.decode(Int.self, forKey: .sortIndex)
-        shares = try container.decode(Double.self, forKey: .shares)
-        costPrice = try container.decode(Double.self, forKey: .costPrice)
+
+        // 优先读取 holdings 数组，超旧数据回退读 shares/costPrice
+        if let h = try container.decodeIfPresent([HoldingRecord].self, forKey: .holdings), !h.isEmpty {
+            holdings = h
+        } else {
+            let s = try container.decodeIfPresent(Double.self, forKey: .shares) ?? 0
+            let c = try container.decodeIfPresent(Double.self, forKey: .costPrice) ?? 0
+            holdings = (s > 0 && c > 0) ? [HoldingRecord(shares: s, costPrice: c)] : []
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(code, forKey: .code)
+        try container.encode(name, forKey: .name)
+        try container.encode(fundType, forKey: .fundType)
+        try container.encode(sortIndex, forKey: .sortIndex)
+        try container.encode(holdings, forKey: .holdings)
+        // 向后兼容写入聚合值
+        try container.encode(shares, forKey: .shares)
+        try container.encode(costPrice, forKey: .costPrice)
+    }
+
+    // MARK: - 聚合计算
+    // 注意：shares 和 costPrice 是计算属性（从 holdings 聚合），
+    // 同时也是 CodingKeys 的成员（用于向后兼容写入）。
+    // 解码时优先读 holdings，仅旧数据回退读 shares/costPrice。
+
+    /// 总份额（从 holdings 聚合）
+    var shares: Double {
+        holdings.reduce(0) { $0 + $1.shares }
+    }
+
+    /// 加权平均成本净值（从 holdings 聚合）
+    var costPrice: Double {
+        let totalShares = shares
+        guard totalShares > 0 else { return 0 }
+        return totalCost / totalShares
     }
 
     /// 是否有持仓数据
     var hasHolding: Bool {
-        shares > 0 && costPrice > 0
+        shares > 0
     }
 
     /// 计算持仓市值
@@ -147,7 +202,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
 
     /// 计算持仓成本
     var totalCost: Double {
-        shares * costPrice
+        holdings.reduce(0) { $0 + $1.shares * $1.costPrice }
     }
 
     /// 计算持仓盈亏
