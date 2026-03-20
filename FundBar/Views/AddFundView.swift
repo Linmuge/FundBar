@@ -72,6 +72,10 @@ struct AddFundView: View {
                     TextField("可选", text: $sharesText)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12).monospacedDigit())
+                        .onChange(of: sharesText) { _, newValue in
+                            let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
+                            if filtered != newValue { sharesText = filtered }
+                        }
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("成本净值")
@@ -80,6 +84,10 @@ struct AddFundView: View {
                     TextField("可选", text: $costPriceText)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12).monospacedDigit())
+                        .onChange(of: costPriceText) { _, newValue in
+                            let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
+                            if filtered != newValue { costPriceText = filtered }
+                        }
                 }
             }
 

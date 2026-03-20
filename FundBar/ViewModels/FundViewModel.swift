@@ -20,40 +20,33 @@ final class FundViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Private Properties
-
-    private let service = FundService.shared
-    private var refreshTimer: Timer?
-    private let refreshInterval: TimeInterval = 30
-
-    private let watchedFundsKey = "watched_funds_v2"
-    private let dataSourceKey = "data_source"
-
-    // MARK: - Watched Funds (持久化)
-
-    /// 自选基金列表（含持仓信息）
-    var watchedFunds: [WatchedFund] {
-        get {
-            guard let data = UserDefaults.standard.data(forKey: watchedFundsKey),
-                  let funds = try? JSONDecoder().decode([WatchedFund].self, from: data) else {
-                // 兼容旧版：从 watched_fund_codes 迁移
-                return migrateFromOldFormat()
-            }
-            return funds
-        }
-        set {
-            if let data = try? JSONEncoder().encode(newValue) {
+    /// 自选基金列表（含持仓信息）- @Published 存储属性，didSet 自动写入 UserDefaults
+    @Published var watchedFunds: [WatchedFund] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(watchedFunds) {
                 UserDefaults.standard.set(data, forKey: watchedFundsKey)
             }
         }
     }
 
+    // MARK: - Private Properties
+
+    private let service = FundService.shared
+    private var refreshTimer: Timer?
+    /// 交易时间刷新间隔
+    private let tradingRefreshInterval: TimeInterval = 30
+    /// 非交易时间刷新间隔
+    private let idleRefreshInterval: TimeInterval = 300
+
+    private let watchedFundsKey = "watched_funds_v2"
+    private let dataSourceKey = "data_source"
+
+    // MARK: - Computed Properties
+
     /// 自选基金代码列表
     var watchedCodes: [String] {
         watchedFunds.map(\.code)
     }
-
-    // MARK: - Computed Properties
 
     /// 总估算涨跌幅
     var totalChangeDisplay: String {
@@ -104,10 +97,11 @@ final class FundViewModel: ObservableObject {
         watchedFunds.reduce(0) { total, wf in
             guard wf.hasHolding,
                   let fund = funds.first(where: { $0.fundcode == wf.code }) else { return total }
-            let yesterdayNav = fund.unitValue // dwjz = 上一个已发布净值
+            let yesterdayNav = fund.unitValue
             return total + wf.shares * yesterdayNav * (fund.changePercent / 100)
         }
     }
+
     /// 是否在交易时间
     var isTradingTime: Bool {
         let calendar = Calendar.current
@@ -139,6 +133,14 @@ final class FundViewModel: ObservableObject {
             service.switchSource(to: source)
         }
 
+        // 从 UserDefaults 恢复自选列表（直接赋值避免触发 didSet 写入）
+        if let data = UserDefaults.standard.data(forKey: watchedFundsKey),
+           let funds = try? JSONDecoder().decode([WatchedFund].self, from: data) {
+            _watchedFunds = Published(initialValue: funds)
+        } else {
+            _watchedFunds = Published(initialValue: migrateFromOldFormat())
+        }
+
         startAutoRefresh()
         Task { await refresh() }
     }
@@ -153,23 +155,26 @@ final class FundViewModel: ObservableObject {
     func addFund(code: String, shares: Double = 0, costPrice: Double = 0) async -> Bool {
         let trimmedCode = code.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedCode.count == 6,
-              trimmedCode.allSatisfy({ $0.isNumber }),
-              !watchedCodes.contains(trimmedCode) else {
+              trimmedCode.allSatisfy({ $0.isNumber }) else {
+            errorMessage = "请输入6位数字基金代码"
+            return false
+        }
+
+        guard !watchedCodes.contains(trimmedCode) else {
+            errorMessage = "该基金已在自选列表中"
             return false
         }
 
         do {
             let fund = try await service.fetchEstimate(code: trimmedCode)
-            var current = watchedFunds
             let newWatched = WatchedFund(
                 code: trimmedCode,
                 name: fund.name,
-                sortIndex: current.count,
+                sortIndex: watchedFunds.count,
                 shares: shares,
                 costPrice: costPrice
             )
-            current.append(newWatched)
-            watchedFunds = current
+            watchedFunds.append(newWatched)
             funds.append(fund)
             return true
         } catch {
@@ -180,20 +185,15 @@ final class FundViewModel: ObservableObject {
 
     /// 移除自选基金
     func removeFund(code: String) {
-        var current = watchedFunds
-        current.removeAll { $0.code == code }
-        watchedFunds = current
+        watchedFunds.removeAll { $0.code == code }
         funds.removeAll { $0.fundcode == code }
     }
 
     /// 更新持仓信息
     func updateHolding(code: String, shares: Double, costPrice: Double) {
-        var current = watchedFunds
-        if let index = current.firstIndex(where: { $0.code == code }) {
-            current[index].shares = shares
-            current[index].costPrice = costPrice
-            watchedFunds = current
-            objectWillChange.send()
+        if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
+            watchedFunds[index].shares = shares
+            watchedFunds[index].costPrice = costPrice
         }
     }
 
@@ -216,21 +216,17 @@ final class FundViewModel: ObservableObject {
         var result = await service.fetchMultipleEstimates(codes: codes)
 
         // 用持久化名称覆盖数据源返回的无效名称，并更新存储名称
-        let watched = watchedFunds
-        var needsSave = false
-        var updatedWatched = watched
         for i in 0..<result.count {
             let code = result[i].fundcode
-            if let wIndex = updatedWatched.firstIndex(where: { $0.code == code }) {
-                if result[i].name.count > updatedWatched[wIndex].name.count {
-                    // 数据源返回了更完整的名称，更新存储
-                    updatedWatched[wIndex].name = result[i].name
-                    needsSave = true
-                } else if !updatedWatched[wIndex].name.isEmpty && result[i].name != updatedWatched[wIndex].name {
-                    // 数据源名称不如存储的，用存储名称覆盖
+            if let wIndex = watchedFunds.firstIndex(where: { $0.code == code }) {
+                if watchedFunds[wIndex].name.isEmpty && !result[i].name.isEmpty {
+                    // 存储名称为空，采用 API 返回的名称
+                    watchedFunds[wIndex].name = result[i].name
+                } else if !watchedFunds[wIndex].name.isEmpty && result[i].name != watchedFunds[wIndex].name {
+                    // 存储名称非空，始终用存储名称覆盖
                     result[i] = Fund(
                         fundcode: result[i].fundcode,
-                        name: updatedWatched[wIndex].name,
+                        name: watchedFunds[wIndex].name,
                         dwjz: result[i].dwjz,
                         gsz: result[i].gsz,
                         gszzl: result[i].gszzl,
@@ -240,7 +236,7 @@ final class FundViewModel: ObservableObject {
                 }
             }
         }
-        if needsSave { watchedFunds = updatedWatched }
+        // needsSave 时 watchedFunds 的 didSet 已自动触发写入
 
         withAnimation(.easeInOut(duration: 0.3)) {
             self.funds = result
@@ -249,12 +245,20 @@ final class FundViewModel: ObservableObject {
         }
     }
 
-    /// 开始自动刷新
+    /// 开始自动刷新（交易时间 30s，非交易时间 5min）
     func startAutoRefresh() {
         refreshTimer?.invalidate()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: refreshInterval, repeats: true) { [weak self] _ in
+        let interval = isTradingTime ? tradingRefreshInterval : idleRefreshInterval
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                await self?.refresh()
+                guard let self else { return }
+                // 动态调整刷新频率
+                let shouldUseTradingInterval = self.isTradingTime
+                let currentInterval = shouldUseTradingInterval ? self.tradingRefreshInterval : self.idleRefreshInterval
+                if currentInterval != interval {
+                    self.startAutoRefresh() // 频率变化时重新设置 Timer
+                }
+                await self.refresh()
             }
         }
     }

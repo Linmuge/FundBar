@@ -141,7 +141,16 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxHeight: 400)
+        .frame(maxHeight: dynamicListHeight)
+    }
+
+    /// 根据基金数量动态计算列表最大高度（每只基金约 64pt，上限屏幕 60%）
+    private var dynamicListHeight: CGFloat {
+        let perItem: CGFloat = 68
+        let count = CGFloat(max(viewModel.funds.count, 1))
+        let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
+        let maxAllowed = screenHeight * 0.6
+        return min(count * perItem, maxAllowed)
     }
 
     // MARK: - Empty View

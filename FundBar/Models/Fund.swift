@@ -18,7 +18,7 @@ struct Fund: Identifiable, Codable, Equatable {
 
     var id: String { fundcode }
 
-    // jzrq 可能缺失（蛋卷等数据源），提供默认值
+    // jzrq 可能缺失（部分数据源），提供默认值
     init(fundcode: String, name: String, dwjz: String, gsz: String, gszzl: String, gztime: String, jzrq: String = "") {
         self.fundcode = fundcode
         self.name = name
