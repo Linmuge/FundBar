@@ -141,16 +141,24 @@ struct ContentView: View {
                 }
             }
         }
-        .frame(maxHeight: dynamicListHeight)
+        .frame(height: min(listIdealHeight, listMaxHeight))
     }
 
-    /// 根据基金数量动态计算列表最大高度（每只基金约 64pt，上限屏幕 60%）
-    private var dynamicListHeight: CGFloat {
-        let perItem: CGFloat = 68
-        let count = CGFloat(max(viewModel.funds.count, 1))
+    /// 列表理想高度 = 行数 * 每行高度（含持仓行更高）
+    private var listIdealHeight: CGFloat {
+        let funds = viewModel.funds
+        guard !funds.isEmpty else { return 80 }
+        let total = funds.reduce(CGFloat(0)) { sum, fund in
+            let hasHolding = viewModel.getWatchedFund(code: fund.fundcode)?.hasHolding ?? false
+            return sum + (hasHolding ? 82 : 64)
+        }
+        return total
+    }
+
+    /// 列表最大高度 = 屏幕可用高度的 70%
+    private var listMaxHeight: CGFloat {
         let screenHeight = NSScreen.main?.visibleFrame.height ?? 800
-        let maxAllowed = screenHeight * 0.6
-        return min(count * perItem, maxAllowed)
+        return screenHeight * 0.7
     }
 
     // MARK: - Empty View
