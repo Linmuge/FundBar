@@ -418,6 +418,9 @@ final class FundViewModel: ObservableObject {
         // 异步加载历史数据（不阻塞主刷新）
         Task { await fetchHistoryData(codes: codes) }
 
+        // 收盘后异步同步当日确认净值
+        Task { await syncConfirmedNav(codes: codes) }
+
         // 从基金名称解析类型并补全
         backfillFundTypesFromName()
 
@@ -566,6 +569,47 @@ final class FundViewModel: ObservableObject {
         for (code, navs) in results {
             if !navs.isEmpty {
                 fundHistory[code] = navs
+            }
+        }
+    }
+
+    /// 收盘后同步当日确认净值（东方财富历史净值 API 比天天基金估值 API 更新更快）
+    private func syncConfirmedNav(codes: [String]) async {
+        // 只在收盘后(15:00)至次日开盘前同步
+        let hour = Calendar.current.component(.hour, from: Date())
+        guard hour >= 15 || hour < 9 else { return }
+
+        let today = Self.todayString()
+
+        await withTaskGroup(of: (String, HistoryNav?).self) { group in
+            for code in codes {
+                // 已经同步过的跳过
+                if let existing = funds.first(where: { $0.fundcode == code }),
+                   existing.isNavUpdatedToday { continue }
+
+                group.addTask {
+                    let history = await self.service.fetchHistory(code: code, days: 1)
+                    return (code, history.first)
+                }
+            }
+
+            for await (code, nav) in group {
+                guard let nav = nav, nav.date == today else { continue }
+                // 找到对应 fund 并更新
+                if let index = funds.firstIndex(where: { $0.fundcode == code }) {
+                    let old = funds[index]
+                    let oldNav = Double(old.dwjz) ?? 0
+                    let changePercent = oldNav > 0 ? (nav.nav - oldNav) / oldNav * 100 : 0
+                    funds[index] = Fund(
+                        fundcode: old.fundcode,
+                        name: old.name,
+                        dwjz: String(format: "%.4f", nav.nav),
+                        gsz: String(format: "%.4f", nav.nav),  // 确认后估值=净值
+                        gszzl: String(format: "%.2f", changePercent),
+                        gztime: old.gztime,
+                        jzrq: today
+                    )
+                }
             }
         }
     }
