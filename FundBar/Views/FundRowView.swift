@@ -35,22 +35,29 @@ struct FundRowView: View {
 
             // 右侧: 净值 + 涨跌幅 + 盈亏
             VStack(alignment: .trailing, spacing: 3) {
+                // 始终显示净值
                 HStack(spacing: 3) {
-                    if fund.isNavUpdatedToday {
-                        Text("净值")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.blue)
-                    }
-                    Text(fund.isNavUpdatedToday ? fund.dwjz : fund.gsz)
+                    Text(fund.isNavUpdatedToday ? "净值" : "昨净")
+                        .font(.system(size: 9))
+                        .foregroundStyle(fund.isNavUpdatedToday ? Color.blue : Color.gray)
+                    Text(fund.dwjz)
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                 }
 
-                Text(changeText)
-                    .font(.system(size: 12, weight: .medium).monospacedDigit())
-                    .foregroundStyle(changeColor)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                // 估算涨跌幅
+                HStack(spacing: 4) {
+                    if !fund.isNavUpdatedToday && fund.gsz != fund.dwjz {
+                        Text("估 \(fund.gsz)")
+                            .font(.system(size: 10).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Text(changeText)
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                        .foregroundStyle(changeColor)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                }
 
                 if let h = holding, h.hasHolding {
                     let pl = h.profitLoss(nav: fund.bestNav)

@@ -163,6 +163,7 @@ final class FundViewModel: ObservableObject {
             var current = watchedFunds
             let newWatched = WatchedFund(
                 code: trimmedCode,
+                name: fund.name,
                 sortIndex: current.count,
                 shares: shares,
                 costPrice: costPrice
@@ -212,7 +213,34 @@ final class FundViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
-        let result = await service.fetchMultipleEstimates(codes: codes)
+        var result = await service.fetchMultipleEstimates(codes: codes)
+
+        // 用持久化名称覆盖数据源返回的无效名称，并更新存储名称
+        let watched = watchedFunds
+        var needsSave = false
+        var updatedWatched = watched
+        for i in 0..<result.count {
+            let code = result[i].fundcode
+            if let wIndex = updatedWatched.firstIndex(where: { $0.code == code }) {
+                if result[i].name.count > updatedWatched[wIndex].name.count {
+                    // 数据源返回了更完整的名称，更新存储
+                    updatedWatched[wIndex].name = result[i].name
+                    needsSave = true
+                } else if !updatedWatched[wIndex].name.isEmpty && result[i].name != updatedWatched[wIndex].name {
+                    // 数据源名称不如存储的，用存储名称覆盖
+                    result[i] = Fund(
+                        fundcode: result[i].fundcode,
+                        name: updatedWatched[wIndex].name,
+                        dwjz: result[i].dwjz,
+                        gsz: result[i].gsz,
+                        gszzl: result[i].gszzl,
+                        gztime: result[i].gztime,
+                        jzrq: result[i].jzrq
+                    )
+                }
+            }
+        }
+        if needsSave { watchedFunds = updatedWatched }
 
         withAnimation(.easeInOut(duration: 0.3)) {
             self.funds = result

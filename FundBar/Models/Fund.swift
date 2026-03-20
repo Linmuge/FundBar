@@ -88,11 +88,34 @@ struct Fund: Identifiable, Codable, Equatable {
 /// 自选基金 - 用于持久化存储（含持仓信息）
 struct WatchedFund: Codable, Identifiable, Equatable {
     let code: String
+    var name: String        // 基金名称（持久化，解决部分数据源不返回名称）
     var sortIndex: Int
     var shares: Double      // 持有份额（0 表示未录入）
     var costPrice: Double   // 持仓成本净值（0 表示未录入）
 
     var id: String { code }
+
+    // 兼容旧版数据（无 name 字段）
+    init(code: String, name: String = "", sortIndex: Int, shares: Double, costPrice: Double) {
+        self.code = code
+        self.name = name
+        self.sortIndex = sortIndex
+        self.shares = shares
+        self.costPrice = costPrice
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case code, name, sortIndex, shares, costPrice
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        code = try container.decode(String.self, forKey: .code)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        sortIndex = try container.decode(Int.self, forKey: .sortIndex)
+        shares = try container.decode(Double.self, forKey: .shares)
+        costPrice = try container.decode(Double.self, forKey: .costPrice)
+    }
 
     /// 是否有持仓数据
     var hasHolding: Bool {
