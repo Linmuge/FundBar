@@ -6,14 +6,16 @@ struct FundRowView: View {
     let holding: WatchedFund?
     let historyData: [HistoryNav]
     let hasDCAPlan: Bool
+    let isTradingDay: Bool
     let onDelete: () -> Void
     let onEditHolding: () -> Void
 
-    init(fund: Fund, holding: WatchedFund?, historyData: [HistoryNav] = [], hasDCAPlan: Bool = false, onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
+    init(fund: Fund, holding: WatchedFund?, historyData: [HistoryNav] = [], hasDCAPlan: Bool = false, isTradingDay: Bool = true, onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
         self.fund = fund
         self.holding = holding
         self.historyData = historyData
         self.hasDCAPlan = hasDCAPlan
+        self.isTradingDay = isTradingDay
         self.onDelete = onDelete
         self.onEditHolding = onEditHolding
     }
@@ -80,17 +82,26 @@ struct FundRowView: View {
 
                 // 估算涨跌幅
                 HStack(spacing: 4) {
-                    if !fund.isNavUpdatedToday && fund.gsz != fund.dwjz {
-                        Text("估 \(fund.gsz)")
-                            .font(.system(size: 10).monospacedDigit())
+                    if isTradingDay {
+                        if !fund.isNavUpdatedToday && fund.gsz != fund.dwjz {
+                            Text("估 \(fund.gsz)")
+                                .font(.system(size: 10).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(changeText)
+                            .font(.system(size: 11, weight: .medium).monospacedDigit())
+                            .foregroundStyle(changeColor)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                    } else {
+                        Text("休市")
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                     }
-                    Text(changeText)
-                        .font(.system(size: 11, weight: .medium).monospacedDigit())
-                        .foregroundStyle(changeColor)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 1)
-                        .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
                 }
 
                 if let h = holding, h.hasHolding {

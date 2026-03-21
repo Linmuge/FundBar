@@ -164,6 +164,7 @@ struct ContentView: View {
                         holding: viewModel.getWatchedFund(code: fund.fundcode),
                         historyData: viewModel.fundHistory[fund.fundcode] ?? [],
                         hasDCAPlan: viewModel.getWatchedFund(code: fund.fundcode)?.dcaPlan != nil,
+                        isTradingDay: viewModel.isTradingDay,
                         onDelete: {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 viewModel.removeFund(code: fund.fundcode)
@@ -264,15 +265,26 @@ struct ContentView: View {
                     }
 
                     HStack(spacing: 8) {
-                        let ep = viewModel.todayEstimatedProfit
-                        let epSign = ep >= 0 ? "+" : ""
-                        HStack(spacing: 2) {
-                            Text("今日")
-                                .font(.system(size: 10))
-                                .foregroundStyle(.tertiary)
-                            Text("\(epSign)\(String(format: "%.2f", ep))")
-                                .font(.system(size: 10, weight: .medium).monospacedDigit())
-                                .foregroundStyle(ep >= 0 ? .red : .green)
+                        if viewModel.isTradingDay {
+                            let ep = viewModel.todayEstimatedProfit
+                            let epSign = ep >= 0 ? "+" : ""
+                            HStack(spacing: 2) {
+                                Text("今日")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                                Text("\(epSign)\(String(format: "%.2f", ep))")
+                                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                    .foregroundStyle(ep >= 0 ? .red : .green)
+                            }
+                        } else {
+                            HStack(spacing: 2) {
+                                Text("今日")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                                Text("休市")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
 
                         let pl = viewModel.totalProfitLoss
@@ -300,13 +312,22 @@ struct ContentView: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(viewModel.totalChangeDisplay)
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(summaryColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(summaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+        VStack(alignment: .trailing, spacing: 3) {
+                if viewModel.isTradingDay {
+                    Text(viewModel.totalChangeDisplay)
+                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(summaryColor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(summaryColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                } else {
+                    Text("休市")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                }
 
                 if viewModel.hasAnyHolding {
                     let pp = viewModel.totalProfitPercent

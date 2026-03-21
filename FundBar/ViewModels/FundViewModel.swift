@@ -69,6 +69,8 @@ final class FundViewModel: ObservableObject {
     var menuBarText: String {
         switch menuBarMode {
         case .todayProfit:
+            // 非交易日今日盈亏无意义
+            if !isTradingDay { return "休市" }
             if hasAnyHolding {
                 let ep = todayEstimatedProfit
                 let sign = ep >= 0 ? "+" : ""
@@ -77,8 +79,11 @@ final class FundViewModel: ObservableObject {
                 return totalChangeDisplay
             }
         case .changePercent:
+            // 非交易日涨跌幅是旧数据
+            if !isTradingDay { return "休市" }
             return totalChangeDisplay
         case .totalProfit:
+            // 总盈亏基于确认净值，非交易日仍有意义
             if hasAnyHolding {
                 let pl = totalProfitLoss
                 let sign = pl >= 0 ? "+" : ""
@@ -95,11 +100,13 @@ final class FundViewModel: ObservableObject {
     var menuBarColor: Color {
         switch menuBarMode {
         case .todayProfit:
+            if !isTradingDay { return .secondary }
             let val = hasAnyHolding ? todayEstimatedProfit : totalChangePercent
             if val > 0 { return .red }
             if val < 0 { return .green }
             return .secondary
         case .changePercent:
+            if !isTradingDay { return .secondary }
             let avg = totalChangePercent
             if avg > 0 { return .red }
             if avg < 0 { return .green }
@@ -214,14 +221,18 @@ final class FundViewModel: ObservableObject {
         return wf.profitLoss(nav: fund.bestNav)
     }
 
+    /// 是否为交易日（周一~周五，不含法定节假日）
+    var isTradingDay: Bool {
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        return weekday >= 2 && weekday <= 6
+    }
+
     /// 是否在交易时间
     var isTradingTime: Bool {
+        guard isTradingDay else { return false }
+
         let calendar = Calendar.current
         let now = Date()
-        let weekday = calendar.component(.weekday, from: now)
-
-        guard weekday >= 2 && weekday <= 6 else { return false }
-
         let hour = calendar.component(.hour, from: now)
         let minute = calendar.component(.minute, from: now)
         let timeValue = hour * 60 + minute
