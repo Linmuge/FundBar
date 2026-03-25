@@ -17,6 +17,12 @@ struct AddFundView: View {
     @State private var selectedFundType = ""
     @FocusState private var isFocused: Bool
 
+    @State private var inputMode = 0 // 0: 按份额, 1: 按金额
+    @State private var buyAmountText = ""
+    @State private var feeText = ""
+    @State private var buyDate = Date()
+    @State private var isBefore3PM = true
+
     var body: some View {
         VStack(spacing: 12) {
             // 标题
@@ -130,31 +136,87 @@ struct AddFundView: View {
                 }
             }
 
-            // 持仓信息（可选）
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("份额")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    TextField("可选", text: $sharesText)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12).monospacedDigit())
-                        .onChange(of: sharesText) { _, newValue in
-                            let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
-                            if filtered != newValue { sharesText = filtered }
-                        }
+            // 录入方式
+            Picker("", selection: $inputMode) {
+                Text("按最终份额录入").tag(0)
+                Text("按买入金额录入").tag(1)
+            }
+            .pickerStyle(.segmented)
+            .padding(.bottom, 4)
+
+            if inputMode == 0 {
+                // 按份额持仓信息（可选）
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("份额")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        TextField("可选", text: $sharesText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12).monospacedDigit())
+                            .onChange(of: sharesText) { _, newValue in
+                                let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
+                                if filtered != newValue { sharesText = filtered }
+                            }
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("成本净值")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        TextField("可选", text: $costPriceText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12).monospacedDigit())
+                            .onChange(of: costPriceText) { _, newValue in
+                                let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
+                                if filtered != newValue { costPriceText = filtered }
+                            }
+                    }
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("成本净值")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.tertiary)
-                    TextField("可选", text: $costPriceText)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12).monospacedDigit())
-                        .onChange(of: costPriceText) { _, newValue in
-                            let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
-                            if filtered != newValue { costPriceText = filtered }
+            } else {
+                // 按金额录入
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("买入金额")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            TextField("必填", text: $buyAmountText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12).monospacedDigit())
+                                .onChange(of: buyAmountText) { _, newValue in
+                                    let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
+                                    if filtered != newValue { buyAmountText = filtered }
+                                }
                         }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("预估手续费")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                            TextField("可选", text: $feeText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 12).monospacedDigit())
+                                .onChange(of: feeText) { _, newValue in
+                                    let filtered = String(newValue.filter { $0.isNumber || $0 == "." })
+                                    if filtered != newValue { feeText = filtered }
+                                }
+                        }
+                    }
+                    HStack {
+                        Text("买入时间")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Spacer()
+                        DatePicker("", selection: $buyDate, displayedComponents: .date)
+                            .labelsHidden()
+                            .controlSize(.mini)
+                        Picker("", selection: $isBefore3PM) {
+                            Text("15:00 前").tag(true)
+                            Text("15:00 后").tag(false)
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.mini)
+                    }
                 }
             }
 
@@ -237,14 +299,21 @@ struct AddFundView: View {
         showError = false
         successMessage = ""
 
-        let shares = Double(sharesText) ?? 0
-        let costPrice = Double(costPriceText) ?? 0
+        let shares = inputMode == 0 ? (Double(sharesText) ?? 0) : 0
+        let costPrice = inputMode == 0 ? (Double(costPriceText) ?? 0) : 0
+        
+        let buyAmount = inputMode == 1 ? abs(Double(buyAmountText) ?? 0) : 0
+        let fee = inputMode == 1 ? abs(Double(feeText) ?? 0) : 0
 
         Task {
             let success = await viewModel.addFund(code: code, shares: shares, costPrice: costPrice, fundType: selectedFundType)
             isAdding = false
 
             if success {
+                if inputMode == 1 && buyAmount > 0 {
+                    viewModel.addPendingHolding(code: code, buyAmount: buyAmount, fee: fee, buyDate: buyDate, isBefore3PM: isBefore3PM)
+                }
+
                 withAnimation(.easeInOut(duration: 0.2)) {
                     successMessage = "已添加 \(code)"
                 }
@@ -252,6 +321,8 @@ struct AddFundView: View {
                 searchText = ""
                 sharesText = ""
                 costPriceText = ""
+                buyAmountText = ""
+                feeText = ""
                 selectedFundType = ""
                 searchResults = []
                 isFocused = true

@@ -338,6 +338,81 @@ final class FundViewModel: ObservableObject {
         }
     }
 
+    /// 判断是否是已知的中国 A 股非交易日（简易判定主要长假）
+    private func isHoliday(date: Date) -> Bool {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd"
+        let md = f.string(from: date)
+        
+        let holidays = [
+            "01-01", "01-02", "01-03",
+            "02-16", "02-17", "02-18", "02-19", "02-20", "02-21", "02-22", "02-23", "02-24", // 2026春节预估
+            "04-03", "04-04", "04-05", "04-06",
+            "05-01", "05-02", "05-03", "05-04", "05-05",
+            "10-01", "10-02", "10-03", "10-04", "10-05", "10-06", "10-07"
+        ]
+        return holidays.contains(md)
+    }
+
+    /// 获取待确认金额买入的目标确认日期
+    func getTargetConfirmDate(fromDate date: Date, isBefore3PM: Bool) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        let calendar = Calendar.current
+        var targetDate = date
+        
+        if !isBefore3PM {
+            targetDate = calendar.date(byAdding: .day, value: 1, to: targetDate)!
+        }
+        
+        // 遇到周末及节假日顺延到下一个交易日
+        while calendar.component(.weekday, from: targetDate) == 1 || 
+              calendar.component(.weekday, from: targetDate) == 7 ||
+              isHoliday(date: targetDate) {
+            targetDate = calendar.date(byAdding: .day, value: 1, to: targetDate)!
+        }
+        
+        return f.string(from: targetDate)
+    }
+
+    /// 添加一笔按金额买入的待确认记录
+    func addPendingHolding(code: String, buyAmount: Double, fee: Double, buyDate: Date, isBefore3PM: Bool) {
+        if let index = watchedFunds.firstIndex(where: { $0.code == code }) {
+            let targetDate = getTargetConfirmDate(fromDate: buyDate, isBefore3PM: isBefore3PM)
+            let dateStr = {
+                let f = DateFormatter()
+                f.dateFormat = "yyyy-MM-dd"
+                return f.string(from: buyDate)
+            }()
+            let record = HoldingRecord.pending(buyAmount: buyAmount, fee: fee > 0 ? fee : nil, date: dateStr, targetConfirmDate: targetDate)
+            watchedFunds[index].holdings.append(record)
+        }
+    }
+
+    /// 将待确认的记录转为已确认
+    func confirmPendingHolding(code: String, recordId: String, finalShares: Double, finalCost: Double) {
+        if let wIndex = watchedFunds.firstIndex(where: { $0.code == code }),
+           let hIndex = watchedFunds[wIndex].holdings.firstIndex(where: { $0.id == recordId }) {
+            watchedFunds[wIndex].holdings[hIndex].shares = finalShares
+            watchedFunds[wIndex].holdings[hIndex].costPrice = finalCost
+            watchedFunds[wIndex].holdings[hIndex].status = .confirmed
+            watchedFunds[wIndex].holdings[hIndex].note = "已确认金额买入"
+        }
+    }
+
+    /// 获取指定日期的净值，若没有历史数据则回退使用最新净值
+    func getConfirmNav(code: String, targetDate: String?) -> Double {
+        guard let fund = funds.first(where: { $0.fundcode == code }) else { return 0 }
+        
+        if let targetDate = targetDate,
+           let history = fundHistory[code],
+           let historicNav = history.first(where: { $0.date == targetDate }) {
+            return historicNav.nav
+        }
+        
+        return fund.bestNav
+    }
+
     /// 移除一笔持仓记录
     func removeHolding(code: String, recordId: String) {
         if let index = watchedFunds.firstIndex(where: { $0.code == code }) {

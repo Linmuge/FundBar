@@ -7,8 +7,17 @@ struct EditHoldingView: View {
     let fundCode: String
     let fundName: String
 
+    @State private var inputMode = 0 // 0: 按份额, 1: 按金额
     @State private var sharesText = ""
     @State private var costPriceText = ""
+    @State private var buyAmountText = ""
+    @State private var feeText = ""
+    @State private var buyDate = Date()
+    @State private var isBefore3PM = true
+
+    @State private var confirmingRecordId: String? = nil
+    @State private var confirmSharesText = ""
+    @State private var confirmCostText = ""
 
     // 定投设置
     @State private var dcaAmount = ""
@@ -65,45 +74,120 @@ struct EditHoldingView: View {
                     }
 
                     ForEach(visibleRecords) { record in
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 4) {
-                                    Text("\(String(format: "%.2f", record.shares)) 份")
-                                        .font(.system(size: 12, weight: .medium).monospacedDigit())
-                                    if record.isDCA {
-                                        Text("定投")
-                                            .font(.system(size: 8))
-                                            .foregroundStyle(.white)
-                                            .padding(.horizontal, 3)
-                                            .padding(.vertical, 1)
-                                            .background(.blue, in: RoundedRectangle(cornerRadius: 2))
-                                    }
+                        if confirmingRecordId == record.id {
+                            VStack(spacing: 6) {
+                                HStack {
+                                    Text("确认其实际份额")
+                                        .font(.system(size: 11, weight: .medium))
+                                    Spacer()
                                 }
-                                HStack(spacing: 4) {
-                                    Text("成本 \(String(format: "%.4f", record.costPrice))")
-                                        .font(.system(size: 10).monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                    if !record.date.isEmpty {
-                                        Text(record.date.suffix(5))
-                                            .font(.system(size: 10))
-                                            .foregroundStyle(.tertiary)
+                                HStack(spacing: 8) {
+                                    TextField("最终份额", text: $confirmSharesText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.system(size: 11).monospacedDigit())
+                                    TextField("成本净值", text: $confirmCostText)
+                                        .textFieldStyle(.roundedBorder)
+                                        .font(.system(size: 11).monospacedDigit())
+                                }
+                                HStack {
+                                    Spacer()
+                                    Button("取消") { confirmingRecordId = nil }
+                                        .buttonStyle(.plain)
+                                        .font(.system(size: 11))
+                                    Button("保存") {
+                                        let finalShares = Double(confirmSharesText) ?? 0
+                                        let finalCost = Double(confirmCostText) ?? 0
+                                        if finalShares > 0 && finalCost > 0 {
+                                            viewModel.confirmPendingHolding(code: fundCode, recordId: record.id, finalShares: finalShares, finalCost: finalCost)
+                                            confirmingRecordId = nil
+                                        }
                                     }
+                                    .buttonStyle(.borderedProminent)
+                                    .controlSize(.mini)
                                 }
                             }
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                        } else {
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    if record.status == .pending {
+                                        HStack(spacing: 4) {
+                                            Text("金额 \(String(format: "%.2f", record.buyAmount ?? 0))元")
+                                                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                                            Text("待确认")
+                                                .font(.system(size: 8))
+                                                .foregroundStyle(.white)
+                                                .padding(.horizontal, 3)
+                                                .padding(.vertical, 1)
+                                                .background(.orange, in: RoundedRectangle(cornerRadius: 2))
+                                        }
+                                        HStack(spacing: 4) {
+                                            Text("目标净值日: \(record.targetConfirmDate ?? "--")")
+                                                .font(.system(size: 10))
+                                                .foregroundStyle(.secondary)
+                                            if let fee = record.fee, fee > 0 {
+                                                Text("手续费 \(String(format: "%.2f", fee))")
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                        }
+                                    } else {
+                                        HStack(spacing: 4) {
+                                            Text("\(String(format: "%.2f", record.shares)) 份")
+                                                .font(.system(size: 12, weight: .medium).monospacedDigit())
+                                            if record.isDCA {
+                                                Text("定投")
+                                                    .font(.system(size: 8))
+                                                    .foregroundStyle(.white)
+                                                    .padding(.horizontal, 3)
+                                                    .padding(.vertical, 1)
+                                                    .background(.blue, in: RoundedRectangle(cornerRadius: 2))
+                                            }
+                                        }
+                                        HStack(spacing: 4) {
+                                            Text("成本 \(String(format: "%.4f", record.costPrice))")
+                                                .font(.system(size: 10).monospacedDigit())
+                                                .foregroundStyle(.secondary)
+                                            if !record.date.isEmpty {
+                                                Text(record.date.suffix(5))
+                                                    .font(.system(size: 10))
+                                                    .foregroundStyle(.tertiary)
+                                            }
+                                        }
+                                    }
+                                }
 
-                            Spacer()
+                                Spacer()
 
-                            Button {
-                                viewModel.removeHolding(code: fundCode, recordId: record.id)
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.red)
+                                if record.status == .pending {
+                                    Button("确认份额") {
+                                        confirmingRecordId = record.id
+                                        let nav = viewModel.getConfirmNav(code: fundCode, targetDate: record.targetConfirmDate)
+                                        let amt = (record.buyAmount ?? 0) - (record.fee ?? 0)
+                                        if nav > 0 && amt > 0 {
+                                            confirmSharesText = String(format: "%.2f", amt / nav)
+                                        } else {
+                                            confirmSharesText = ""
+                                        }
+                                        confirmCostText = nav > 0 ? String(format: "%.4f", nav) : ""
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.mini)
+                                }
+
+                                Button {
+                                    viewModel.removeHolding(code: fundCode, recordId: record.id)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
                         }
-                        .padding(.vertical, 6)
-                        .padding(.horizontal, 8)
 
                         if record.id != visibleRecords.last?.id {
                             Divider()
@@ -128,18 +212,54 @@ struct EditHoldingView: View {
             Divider()
 
             // 新增持仓
-            Text("添加买入记录")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Text("添加买入记录")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Picker("", selection: $inputMode) {
+                    Text("按份额").tag(0)
+                    Text("按金额").tag(1)
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .frame(width: 100)
+            }
 
-            HStack(spacing: 8) {
-                TextField("份额", text: $sharesText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12).monospacedDigit())
-                TextField("成本净值", text: $costPriceText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12).monospacedDigit())
+            if inputMode == 0 {
+                HStack(spacing: 8) {
+                    TextField("份额", text: $sharesText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospacedDigit())
+                    TextField("成本净值", text: $costPriceText)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12).monospacedDigit())
+                }
+            } else {
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        TextField("买入金额", text: $buyAmountText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12).monospacedDigit())
+                        TextField("预估手续费", text: $feeText)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12).monospacedDigit())
+                    }
+                    HStack {
+                        DatePicker("", selection: $buyDate, displayedComponents: .date)
+                            .labelsHidden()
+                            .controlSize(.mini)
+                        Picker("买入时间", selection: $isBefore3PM) {
+                            Text("15:00 前").tag(true)
+                            Text("15:00 后").tag(false)
+                        }
+                        .pickerStyle(.menu)
+                        .controlSize(.mini)
+                        .font(.system(size: 11))
+                        Spacer()
+                    }
+                }
             }
 
             // 操作按钮
@@ -158,24 +278,33 @@ struct EditHoldingView: View {
                 Spacer()
 
                 Button {
-                    let shares = Double(sharesText) ?? 0
-                    let cost = Double(costPriceText) ?? 0
-                    guard shares > 0, cost > 0 else { return }
-                    let today = {
-                        let f = DateFormatter()
-                        f.dateFormat = "yyyy-MM-dd"
-                        return f.string(from: Date())
-                    }()
-                    viewModel.addHolding(code: fundCode, shares: shares, costPrice: cost, date: today)
-                    sharesText = ""
-                    costPriceText = ""
+                    if inputMode == 0 {
+                        let shares = Double(sharesText) ?? 0
+                        let cost = Double(costPriceText) ?? 0
+                        guard shares > 0, cost > 0 else { return }
+                        let today = {
+                            let f = DateFormatter()
+                            f.dateFormat = "yyyy-MM-dd"
+                            return f.string(from: Date())
+                        }()
+                        viewModel.addHolding(code: fundCode, shares: shares, costPrice: cost, date: today)
+                        sharesText = ""
+                        costPriceText = ""
+                    } else {
+                        let amount = abs(Double(buyAmountText) ?? 0)
+                        let fee = abs(Double(feeText) ?? 0)
+                        guard amount > 0 else { return }
+                        viewModel.addPendingHolding(code: fundCode, buyAmount: amount, fee: fee, buyDate: buyDate, isBefore3PM: isBefore3PM)
+                        buyAmountText = ""
+                        feeText = ""
+                    }
                 } label: {
                     Text("添加")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .disabled(sharesText.isEmpty || costPriceText.isEmpty)
+                .disabled((inputMode == 0 && (sharesText.isEmpty || costPriceText.isEmpty)) || (inputMode == 1 && buyAmountText.isEmpty))
             }
 
             Divider()

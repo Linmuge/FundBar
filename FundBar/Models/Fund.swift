@@ -100,6 +100,12 @@ struct Fund: Identifiable, Codable, Equatable {
     }
 }
 
+/// 持仓记录状态
+enum HoldingStatus: String, Codable {
+    case confirmed = "已确认"
+    case pending = "待确认"
+}
+
 /// 单笔持仓记录
 struct HoldingRecord: Codable, Identifiable, Equatable {
     let id: String  // UUID 字符串（而非 UUID 类型）以兼容 Codable 自动合成
@@ -109,6 +115,13 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
     var note: String       // 备注
     var isDCA: Bool        // 是否定投记录
 
+    // --- 新增扩展字段 ---
+    var status: HoldingStatus // 持仓状态
+    var buyAmount: Double?    // 买入金额 (仅待确认使用)
+    var fee: Double?          // 手续费 (仅待确认使用)
+    var targetConfirmDate: String? // 预计确认份额的净值日期
+
+    /// 正常确认持仓
     init(shares: Double, costPrice: Double, date: String = "", note: String = "", isDCA: Bool = false) {
         self.id = UUID().uuidString
         self.shares = shares
@@ -116,11 +129,23 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
         self.date = date
         self.note = note
         self.isDCA = isDCA
+        self.status = .confirmed
     }
 
-    // 向后兼容旧数据（无 isDCA 字段）
+    /// 待确认金额买入
+    static func pending(buyAmount: Double, fee: Double?, date: String, targetConfirmDate: String) -> HoldingRecord {
+        var record = HoldingRecord(shares: 0, costPrice: 0, date: date, note: "金额买入", isDCA: false)
+        record.status = .pending
+        record.buyAmount = buyAmount
+        record.fee = fee
+        record.targetConfirmDate = targetConfirmDate
+        return record
+    }
+
+    // 向后兼容旧数据
     enum CodingKeys: String, CodingKey {
         case id, shares, costPrice, date, note, isDCA
+        case status, buyAmount, fee, targetConfirmDate
     }
 
     init(from decoder: Decoder) throws {
@@ -131,6 +156,11 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
         date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
         note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
         isDCA = try container.decodeIfPresent(Bool.self, forKey: .isDCA) ?? false
+        
+        status = try container.decodeIfPresent(HoldingStatus.self, forKey: .status) ?? .confirmed
+        buyAmount = try container.decodeIfPresent(Double.self, forKey: .buyAmount)
+        fee = try container.decodeIfPresent(Double.self, forKey: .fee)
+        targetConfirmDate = try container.decodeIfPresent(String.self, forKey: .targetConfirmDate)
     }
 }
 
@@ -217,12 +247,17 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     // 同时也是 CodingKeys 的成员（用于向后兼容写入）。
     // 解码时优先读 holdings，仅旧数据回退读 shares/costPrice。
 
-    /// 总份额（从 holdings 聚合）
-    var shares: Double {
-        holdings.reduce(0) { $0 + $1.shares }
+    /// 获取所有已确认的有效持仓记录 (待确认记录不计入份额和市值)
+    var confirmedHoldings: [HoldingRecord] {
+        holdings.filter { $0.status == .confirmed }
     }
 
-    /// 加权平均成本净值（从 holdings 聚合）
+    /// 总份额（从 confirmedHoldings 聚合）
+    var shares: Double {
+        confirmedHoldings.reduce(0) { $0 + $1.shares }
+    }
+
+    /// 加权平均成本净值（从 confirmedHoldings 聚合）
     var costPrice: Double {
         let totalShares = shares
         guard totalShares > 0 else { return 0 }
@@ -241,7 +276,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
 
     /// 计算持仓成本
     var totalCost: Double {
-        holdings.reduce(0) { $0 + $1.shares * $1.costPrice }
+        confirmedHoldings.reduce(0) { $0 + $1.shares * $1.costPrice }
     }
 
     /// 计算持仓盈亏
@@ -259,7 +294,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
 
     /// 定投记录
     var dcaRecords: [HoldingRecord] {
-        holdings.filter { $0.isDCA }
+        confirmedHoldings.filter { $0.isDCA }
     }
 
     /// 定投次数
