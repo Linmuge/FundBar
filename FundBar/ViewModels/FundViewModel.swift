@@ -84,8 +84,8 @@ final class FundViewModel: ObservableObject {
             return totalChangeDisplay
         case .totalProfit:
             // 总盈亏基于确认净值，非交易日仍有意义
-            if hasAnyHolding {
-                let pl = totalProfitLoss
+            if hasAnyHolding || totalRealizedProfit != 0 {
+                let pl = totalAccountProfitLoss
                 let sign = pl >= 0 ? "+" : ""
                 return "\(sign)\(String(format: "%.0f", pl))"
             } else {
@@ -112,7 +112,7 @@ final class FundViewModel: ObservableObject {
             if avg < 0 { return .green }
             return .secondary
         case .totalProfit:
-            let pl = totalProfitLoss
+            let pl = totalAccountProfitLoss
             if pl > 0 { return .red }
             if pl < 0 { return .green }
             return .secondary
@@ -198,6 +198,16 @@ final class FundViewModel: ObservableObject {
         totalMarketValue - totalCost
     }
 
+    /// 已实现盈亏金额
+    var totalRealizedProfit: Double {
+        watchedFunds.reduce(0) { $0 + $1.realizedProfit }
+    }
+
+    /// 账户总盈亏金额（当前浮动盈亏 + 已实现盈亏）
+    var totalAccountProfitLoss: Double {
+        totalProfitLoss + totalRealizedProfit
+    }
+
     /// 总盈亏比例
     var totalProfitPercent: Double {
         guard totalCost > 0 else { return 0 }
@@ -217,8 +227,8 @@ final class FundViewModel: ObservableObject {
     /// 单只基金盈亏（用于排序）
     func fundProfit(_ fund: Fund) -> Double {
         guard let wf = watchedFunds.first(where: { $0.code == fund.fundcode }),
-              wf.hasHolding else { return 0 }
-        return wf.profitLoss(nav: fund.bestNav)
+              wf.hasHolding || wf.realizedProfit != 0 else { return 0 }
+        return wf.profitLoss(nav: fund.bestNav) + wf.realizedProfit
     }
 
     /// 是否为交易日（周一~周五，不含法定节假日）
@@ -336,6 +346,34 @@ final class FundViewModel: ObservableObject {
                 HoldingRecord(shares: shares, costPrice: costPrice, date: date, note: note, isDCA: isDCA)
             )
         }
+    }
+
+    /// 添加一笔卖出记录
+    @discardableResult
+    func addSellHolding(code: String, shares: Double, sellPrice: Double, date: String = "", fee: Double = 0) -> Bool {
+        guard shares > 0, sellPrice > 0,
+              let index = watchedFunds.firstIndex(where: { $0.code == code }) else {
+            return false
+        }
+
+        let availableShares = watchedFunds[index].shares
+        guard availableShares > 0, shares <= availableShares + 0.000001 else {
+            return false
+        }
+
+        let averageCost = watchedFunds[index].costPrice
+        let finalDate = date.isEmpty ? Self.todayString() : date
+        let normalizedFee = max(fee, 0)
+        let realizedProfit = shares * (sellPrice - averageCost) - normalizedFee
+        let record = HoldingRecord.sell(
+            shares: shares,
+            sellPrice: sellPrice,
+            date: finalDate,
+            fee: normalizedFee > 0 ? normalizedFee : nil,
+            realizedProfit: realizedProfit
+        )
+        watchedFunds[index].holdings.append(record)
+        return true
     }
 
     /// 判断是否是已知的中国 A 股非交易日（简易判定主要长假）
@@ -599,19 +637,17 @@ final class FundViewModel: ObservableObject {
 
     /// 从基金名称解析类型
     private func backfillFundTypesFromName() {
-        var changed = false
         for i in 0..<watchedFunds.count {
             if watchedFunds[i].fundType.isEmpty {
                 if let fund = funds.first(where: { $0.fundcode == watchedFunds[i].code }) {
                     let parsed = parseFundType(from: fund.name)
                     if !parsed.isEmpty {
                         watchedFunds[i].fundType = parsed
-                        changed = true
                     }
                 }
             }
         }
-        // changed 时 watchedFunds.didSet 已自动持久化
+        // watchedFunds.didSet 会自动持久化。
     }
 
     /// 从基金名称中提取类型关键词

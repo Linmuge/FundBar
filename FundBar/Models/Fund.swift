@@ -106,6 +106,12 @@ enum HoldingStatus: String, Codable {
     case pending = "待确认"
 }
 
+/// 持仓交易方向
+enum HoldingRecordType: String, Codable {
+    case buy = "买入"
+    case sell = "卖出"
+}
+
 /// 单笔持仓记录
 struct HoldingRecord: Codable, Identifiable, Equatable {
     let id: String  // UUID 字符串（而非 UUID 类型）以兼容 Codable 自动合成
@@ -114,12 +120,14 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
     var date: String       // 买入日期 yyyy-MM-dd
     var note: String       // 备注
     var isDCA: Bool        // 是否定投记录
+    var transactionType: HoldingRecordType // 买入/卖出
 
     // --- 新增扩展字段 ---
     var status: HoldingStatus // 持仓状态
     var buyAmount: Double?    // 买入金额 (仅待确认使用)
     var fee: Double?          // 手续费 (仅待确认使用)
     var targetConfirmDate: String? // 预计确认份额的净值日期
+    var realizedProfit: Double? // 卖出时按当时持仓均价计算的已实现盈亏
 
     /// 正常确认持仓
     init(shares: Double, costPrice: Double, date: String = "", note: String = "", isDCA: Bool = false) {
@@ -129,6 +137,7 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
         self.date = date
         self.note = note
         self.isDCA = isDCA
+        self.transactionType = .buy
         self.status = .confirmed
     }
 
@@ -142,10 +151,19 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
         return record
     }
 
+    /// 已确认卖出
+    static func sell(shares: Double, sellPrice: Double, date: String, fee: Double?, realizedProfit: Double) -> HoldingRecord {
+        var record = HoldingRecord(shares: shares, costPrice: sellPrice, date: date, note: "卖出", isDCA: false)
+        record.transactionType = .sell
+        record.fee = fee
+        record.realizedProfit = realizedProfit
+        return record
+    }
+
     // 向后兼容旧数据
     enum CodingKeys: String, CodingKey {
-        case id, shares, costPrice, date, note, isDCA
-        case status, buyAmount, fee, targetConfirmDate
+        case id, shares, costPrice, date, note, isDCA, transactionType
+        case status, buyAmount, fee, targetConfirmDate, realizedProfit
     }
 
     init(from decoder: Decoder) throws {
@@ -156,11 +174,13 @@ struct HoldingRecord: Codable, Identifiable, Equatable {
         date = try container.decodeIfPresent(String.self, forKey: .date) ?? ""
         note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
         isDCA = try container.decodeIfPresent(Bool.self, forKey: .isDCA) ?? false
+        transactionType = try container.decodeIfPresent(HoldingRecordType.self, forKey: .transactionType) ?? .buy
         
         status = try container.decodeIfPresent(HoldingStatus.self, forKey: .status) ?? .confirmed
         buyAmount = try container.decodeIfPresent(Double.self, forKey: .buyAmount)
         fee = try container.decodeIfPresent(Double.self, forKey: .fee)
         targetConfirmDate = try container.decodeIfPresent(String.self, forKey: .targetConfirmDate)
+        realizedProfit = try container.decodeIfPresent(Double.self, forKey: .realizedProfit)
     }
 }
 
@@ -247,17 +267,17 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     // 同时也是 CodingKeys 的成员（用于向后兼容写入）。
     // 解码时优先读 holdings，仅旧数据回退读 shares/costPrice。
 
-    /// 获取所有已确认的有效持仓记录 (待确认记录不计入份额和市值)
+    /// 获取所有已确认的有效交易记录 (待确认记录不计入份额和市值)
     var confirmedHoldings: [HoldingRecord] {
         holdings.filter { $0.status == .confirmed }
     }
 
-    /// 总份额（从 confirmedHoldings 聚合）
+    /// 总份额（按交易流水聚合，卖出按卖出时持仓均价扣减成本）
     var shares: Double {
-        confirmedHoldings.reduce(0) { $0 + $1.shares }
+        ledgerSummary.shares
     }
 
-    /// 加权平均成本净值（从 confirmedHoldings 聚合）
+    /// 加权平均成本净值（按交易流水聚合）
     var costPrice: Double {
         let totalShares = shares
         guard totalShares > 0 else { return 0 }
@@ -276,7 +296,7 @@ struct WatchedFund: Codable, Identifiable, Equatable {
 
     /// 计算持仓成本
     var totalCost: Double {
-        confirmedHoldings.reduce(0) { $0 + $1.shares * $1.costPrice }
+        ledgerSummary.cost
     }
 
     /// 计算持仓盈亏
@@ -294,7 +314,12 @@ struct WatchedFund: Codable, Identifiable, Equatable {
 
     /// 定投记录
     var dcaRecords: [HoldingRecord] {
-        confirmedHoldings.filter { $0.isDCA }
+        confirmedHoldings.filter { $0.isDCA && $0.transactionType == .buy }
+    }
+
+    /// 已实现盈亏（来自卖出记录）
+    var realizedProfit: Double {
+        confirmedHoldings.reduce(0) { $0 + ($1.realizedProfit ?? 0) }
     }
 
     /// 定投次数
@@ -323,5 +348,33 @@ struct WatchedFund: Codable, Identifiable, Equatable {
         guard dcaTotalInvested > 0 else { return 0 }
         let currentValue = dcaTotalShares * nav
         return (currentValue - dcaTotalInvested) / dcaTotalInvested * 100
+    }
+
+    private var ledgerSummary: (shares: Double, cost: Double) {
+        var totalShares = 0.0
+        var totalCost = 0.0
+
+        for record in confirmedHoldings {
+            guard record.shares > 0 else { continue }
+
+            switch record.transactionType {
+            case .buy:
+                guard record.costPrice > 0 else { continue }
+                totalShares += record.shares
+                totalCost += record.shares * record.costPrice
+            case .sell:
+                guard totalShares > 0 else { continue }
+                let sellShares = min(record.shares, totalShares)
+                let averageCost = totalCost / totalShares
+                totalShares -= sellShares
+                totalCost -= sellShares * averageCost
+                if totalShares < 0.000001 {
+                    totalShares = 0
+                    totalCost = 0
+                }
+            }
+        }
+
+        return (max(totalShares, 0), max(totalCost, 0))
     }
 }

@@ -32,6 +32,8 @@ struct ProfitChartView: View {
                     chartCanvas(width: geo.size.width)
                 }
                 .frame(height: 80)
+                .padding(8)
+                .background(Color.primary.opacity(0.026), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
                 Text("数据不足")
                     .font(.system(size: 11))
@@ -40,6 +42,7 @@ struct ProfitChartView: View {
             }
         }
         .padding(12)
+        .fundRowSurface(isHovered: false, cornerRadius: 12)
     }
 
     private func chartCanvas(width: CGFloat) -> some View {

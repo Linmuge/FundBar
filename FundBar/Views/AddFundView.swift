@@ -27,17 +27,17 @@ struct AddFundView: View {
         VStack(spacing: 12) {
             // 标题
             HStack {
-                Text("添加基金")
+                Label("添加基金", systemImage: "plus.circle")
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Button {
                     isPresented = false
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 16))
+                    ToolbarIcon(systemName: "xmark")
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("关闭添加基金")
+                .help("关闭")
             }
 
             // 搜索输入
@@ -121,9 +121,10 @@ struct AddFundView: View {
                             }
                         }
                     }
+                    .padding(4)
                 }
                 .frame(maxHeight: 200)
-                .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 6))
+                .fundPanelSurface(cornerRadius: 12)
             }
 
             if isSearching {
@@ -247,6 +248,7 @@ struct AddFundView: View {
             }
         }
         .padding(16)
+        .fundPanelSurface(cornerRadius: 18, tint: .blue.opacity(0.06), interactive: true)
         .onAppear {
             isFocused = true
         }

@@ -4,94 +4,90 @@ import UniformTypeIdentifiers
 /// 主面板视图
 struct ContentView: View {
     @ObservedObject var viewModel: FundViewModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.openWindow) private var openWindow
     @State private var showAddFund = false
     @State private var editingFundCode: String?
     @State private var editingFundName: String?
     @State private var showEditHolding = false
     @State private var showSettings = false
+    @State private var editHoldingInputMode = 0
     @State private var showCharts = UserDefaults.standard.bool(forKey: FundViewModel.showChartsKey)
 
     var body: some View {
-        VStack(spacing: 0) {
-            // 顶部栏
+        VStack(spacing: 10) {
             headerView
 
-            Divider()
-
-            // 内容区
             if viewModel.funds.isEmpty && !viewModel.isLoading {
                 emptyView
             } else {
                 fundListView
             }
 
-            Divider()
-
-            // 持仓汇总
             if !viewModel.funds.isEmpty {
                 summaryView
-                Divider()
             }
 
-            // 添加基金区域
             if showAddFund {
                 AddFundView(viewModel: viewModel, isPresented: $showAddFund)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                Divider()
+                    .transition(panelTransition)
             }
 
-            // 编辑持仓区域
             if showEditHolding, let code = editingFundCode, let name = editingFundName {
                 EditHoldingView(
                     viewModel: viewModel,
                     isPresented: $showEditHolding,
+                    inputMode: $editHoldingInputMode,
                     fundCode: code,
                     fundName: name
                 )
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
-                Divider()
+                .transition(panelTransition)
             }
 
-            // 设置区域
             if showSettings {
                 settingsView
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                Divider()
+                    .transition(panelTransition)
             }
 
-            // 图表区域
             if showCharts && viewModel.hasAnyHolding {
                 chartsSection
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                Divider()
+                    .transition(panelTransition)
             }
 
-            // 底部栏
             footerView
         }
-        .frame(width: 360)
+        .padding(10)
+        .background(windowBackground)
+        .frame(width: 386)
     }
 
     // MARK: - Header
 
     private var headerView: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(.blue)
+                .frame(width: 30, height: 30)
+                .background(.blue.opacity(0.12), in: Circle())
 
-            Text("基金估值")
-                .font(.system(size: 14, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("基金估值")
+                    .font(.system(size: 14, weight: .semibold))
 
-            if viewModel.isTradingTime {
-                Circle()
-                    .fill(.green)
-                    .frame(width: 6, height: 6)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(viewModel.isTradingTime ? .green : .secondary)
+                        .frame(width: 6, height: 6)
+                    Text(viewModel.isTradingTime ? "交易中" : (viewModel.isTradingDay ? "非交易时段" : "休市"))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
 
-            // 排序按钮
             Menu {
                 ForEach(FundSortMode.allCases, id: \.self) { mode in
                     Button {
@@ -106,35 +102,33 @@ struct ContentView: View {
                     }
                 }
             } label: {
-                Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(viewModel.sortMode == .manual ? .secondary : .blue)
+                ToolbarIcon(systemName: "arrow.up.arrow.down", isActive: viewModel.sortMode != .manual)
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
+            .help("排序")
 
-            // 刷新按钮
             Button {
                 Task {
                     await viewModel.refresh()
                 }
             } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12, weight: .medium))
-                    .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+                ToolbarIcon(systemName: "arrow.clockwise", isActive: viewModel.isLoading)
+                    .rotationEffect(.degrees(viewModel.isLoading && !reduceMotion ? 360 : 0))
                     .animation(
-                        viewModel.isLoading
+                        reduceMotion ? nil : (viewModel.isLoading
                         ? .linear(duration: 1).repeatForever(autoreverses: false)
-                        : .default,
+                        : .default),
                         value: viewModel.isLoading
                     )
             }
             .buttonStyle(.plain)
             .disabled(viewModel.isLoading)
+            .accessibilityLabel("刷新基金估值")
+            .help("刷新")
 
-            // 添加按钮
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                animatePanels {
                     showAddFund.toggle()
                     if showAddFund {
                         showEditHolding = false
@@ -142,14 +136,15 @@ struct ContentView: View {
                     }
                 }
             } label: {
-                Image(systemName: showAddFund ? "minus.circle.fill" : "plus.circle.fill")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.blue)
+                ToolbarIcon(systemName: showAddFund ? "minus" : "plus", isActive: showAddFund)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(showAddFund ? "收起添加基金" : "添加基金")
+            .help(showAddFund ? "收起添加" : "添加基金")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .fundPanelSurface(cornerRadius: 20, tint: .blue.opacity(0.08), interactive: true)
     }
 
     // MARK: - Fund List
@@ -157,7 +152,7 @@ struct ContentView: View {
     private var fundListView: some View {
         let displayFunds = viewModel.sortedFunds
         return ScrollView {
-            LazyVStack(spacing: 0) {
+            LazyVStack(spacing: 6) {
                 ForEach(displayFunds) { fund in
                     FundRowView(
                         fund: fund,
@@ -166,29 +161,22 @@ struct ContentView: View {
                         hasDCAPlan: viewModel.getWatchedFund(code: fund.fundcode)?.dcaPlan != nil,
                         isTradingDay: viewModel.isTradingDay,
                         onDelete: {
-                            withAnimation(.easeInOut(duration: 0.25)) {
+                            animatePanels {
                                 viewModel.removeFund(code: fund.fundcode)
                             }
                         },
                         onEditHolding: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                editingFundCode = fund.fundcode
-                                editingFundName = fund.name
-                                showEditHolding = true
-                                showAddFund = false
-                                showSettings = false
+                            animatePanels {
+                                openEditHolding(fund: fund, inputMode: 0)
                             }
                         }
                     )
-
-                    if fund.id != displayFunds.last?.id {
-                        Divider()
-                            .padding(.leading, 14)
-                    }
                 }
             }
+            .padding(8)
         }
-        .frame(height: min(listIdealHeight, listMaxHeight))
+        .frame(height: min(listIdealHeight + 16, listMaxHeight))
+        .fundPanelSurface(cornerRadius: 18)
     }
 
     /// 列表理想高度
@@ -235,6 +223,7 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
+        .fundPanelSurface(cornerRadius: 18)
     }
 
     // MARK: - Summary
@@ -252,7 +241,7 @@ struct ContentView: View {
 
                         // 图表切换
                         Button {
-                            withAnimation(.easeInOut(duration: 0.2)) {
+                            animatePanels {
                                 showCharts.toggle()
                                 UserDefaults.standard.set(showCharts, forKey: FundViewModel.showChartsKey)
                             }
@@ -290,12 +279,25 @@ struct ContentView: View {
                         let pl = viewModel.totalProfitLoss
                         let plSign = pl >= 0 ? "+" : ""
                         HStack(spacing: 2) {
-                            Text("盈亏")
+                            Text("浮盈")
                                 .font(.system(size: 10))
                                 .foregroundStyle(.tertiary)
                             Text("\(plSign)\(String(format: "%.2f", pl))")
                                 .font(.system(size: 10, weight: .medium).monospacedDigit())
                                 .foregroundStyle(pl >= 0 ? .red : .green)
+                        }
+
+                        if viewModel.totalRealizedProfit != 0 {
+                            let rp = viewModel.totalRealizedProfit
+                            let rpSign = rp >= 0 ? "+" : ""
+                            HStack(spacing: 2) {
+                                Text("已实现")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.tertiary)
+                                Text("\(rpSign)\(String(format: "%.2f", rp))")
+                                    .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                    .foregroundStyle(rp >= 0 ? .red : .green)
+                            }
                         }
                     }
                 } else {
@@ -303,16 +305,24 @@ struct ContentView: View {
                         Text("总收益率")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
-                        Text("\(viewModel.funds.count) 只基金")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
+                        if viewModel.totalRealizedProfit != 0 {
+                            let rp = viewModel.totalRealizedProfit
+                            let rpSign = rp >= 0 ? "+" : ""
+                            Text("已实现 \(rpSign)\(String(format: "%.2f", rp))")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(rp >= 0 ? .red : .green)
+                        } else {
+                            Text("\(viewModel.funds.count) 只基金")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
             }
 
             Spacer()
 
-        VStack(alignment: .trailing, spacing: 3) {
+            VStack(alignment: .trailing, spacing: 3) {
                 if viewModel.isTradingDay {
                     Text(viewModel.totalChangeDisplay)
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
@@ -340,6 +350,7 @@ struct ContentView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
+        .fundPanelSurface(cornerRadius: 18, tint: summaryColor.opacity(0.08))
     }
 
     private var summaryColor: Color {
@@ -352,11 +363,10 @@ struct ContentView: View {
     // MARK: - Charts (#7 走势图 + #13 饼图)
 
     private var chartsSection: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 10) {
             let profitData = buildProfitData()
             if !profitData.isEmpty {
                 ProfitChartView(data: profitData)
-                Divider()
             }
 
             let pieSlices = buildPieSlices()
@@ -364,6 +374,8 @@ struct ContentView: View {
                 HoldingPieView(slices: pieSlices)
             }
         }
+        .padding(10)
+        .fundPanelSurface(cornerRadius: 18, tint: .purple.opacity(0.06), interactive: true)
     }
 
     private func buildProfitData() -> [ProfitChartView.ProfitPoint] {
@@ -410,19 +422,19 @@ struct ContentView: View {
     private var settingsView: some View {
         VStack(spacing: 12) {
             HStack {
-                Text("设置")
+                Label("设置", systemImage: "gearshape")
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
+                    animatePanels {
                         showSettings = false
                     }
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.secondary)
-                        .font(.system(size: 16))
+                    ToolbarIcon(systemName: "xmark")
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("关闭设置")
+                .help("关闭")
             }
 
             // 开机自启
@@ -496,6 +508,7 @@ struct ContentView: View {
             }
         }
         .padding(16)
+        .fundPanelSurface(cornerRadius: 18, interactive: true)
     }
 
     // MARK: - Footer
@@ -510,9 +523,18 @@ struct ContentView: View {
 
             Spacer()
 
+            Button {
+                openWindow(id: "main")
+            } label: {
+                ToolbarIcon(systemName: "macwindow", size: 11, diameter: 26)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("打开主窗口")
+            .help("打开主窗口")
+
             // 设置按钮
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                animatePanels {
                     showSettings.toggle()
                     if showSettings {
                         showAddFund = false
@@ -520,24 +542,24 @@ struct ContentView: View {
                     }
                 }
             } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                ToolbarIcon(systemName: "gearshape", size: 11, diameter: 26, isActive: showSettings)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(showSettings ? "收起设置" : "打开设置")
+            .help("设置")
 
-            // 退出按钮
             Button {
                 NSApplication.shared.terminate(nil)
             } label: {
-                Text("退出")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                ToolbarIcon(systemName: "power", size: 11, diameter: 26)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("退出 FundBar")
+            .help("退出")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
+        .fundPanelSurface(cornerRadius: 16)
     }
 
     // MARK: - Data Export/Import
@@ -560,5 +582,181 @@ struct ContentView: View {
             guard response == .OK, let url = panel.url else { return }
             viewModel.importData(from: url)
         }
+    }
+
+    private func openEditHolding(fund: Fund, inputMode: Int) {
+        editingFundCode = fund.fundcode
+        editingFundName = fund.name
+        editHoldingInputMode = inputMode
+        showEditHolding = true
+        showAddFund = false
+        showSettings = false
+    }
+
+    private var panelTransition: AnyTransition {
+        reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom))
+    }
+
+    private var windowBackground: some View {
+        RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .fill(reduceTransparency ? AnyShapeStyle(Color(nsColor: .windowBackgroundColor)) : AnyShapeStyle(.ultraThinMaterial))
+            .opacity(0.82)
+    }
+
+    private func animatePanels(_ updates: () -> Void) {
+        if reduceMotion {
+            updates()
+        } else {
+            withAnimation(.easeInOut(duration: 0.2), updates)
+        }
+    }
+}
+
+struct ToolbarIcon: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let systemName: String
+    var size: CGFloat = 12
+    var diameter: CGFloat = 28
+    var isActive: Bool = false
+
+    var body: some View {
+        let shape = Circle()
+
+        icon
+            .frame(width: diameter, height: diameter)
+            .background {
+                if #available(macOS 26.0, *), !reduceTransparency {
+                    Color.clear
+                } else {
+                    shape.fill(isActive ? Color.accentColor.opacity(0.16) : Color.primary.opacity(0.045))
+                }
+            }
+            .modifier(ToolbarGlassModifier(shape: shape, tint: isActive ? Color.accentColor.opacity(0.10) : nil))
+            .overlay {
+                shape.stroke(Color.primary.opacity(isActive ? 0.10 : 0.06), lineWidth: 0.5)
+            }
+            .contentShape(shape)
+    }
+
+    private var icon: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: .semibold))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+    }
+}
+
+extension View {
+    func fundPanelSurface(cornerRadius: CGFloat = 18, tint: Color? = nil, interactive: Bool = false) -> some View {
+        modifier(FundPanelSurfaceModifier(cornerRadius: cornerRadius, tint: tint, interactive: interactive))
+    }
+
+    func fundRowSurface(isHovered: Bool, cornerRadius: CGFloat = 12) -> some View {
+        modifier(FundRowSurfaceModifier(isHovered: isHovered, cornerRadius: cornerRadius))
+    }
+
+    func fundWindowBackground() -> some View {
+        modifier(FundWindowBackgroundModifier())
+    }
+}
+
+private struct ToolbarGlassModifier<S: Shape>: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let shape: S
+    let tint: Color?
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content
+                .glassEffect(.regular.tint(tint).interactive(true), in: shape)
+        } else {
+            content
+        }
+    }
+}
+
+private struct FundWindowBackgroundModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                windowBackground
+                    .ignoresSafeArea()
+            }
+    }
+
+    @ViewBuilder
+    private var windowBackground: some View {
+        if reduceTransparency {
+            Color(nsColor: .windowBackgroundColor)
+        } else if #available(macOS 26.0, *) {
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                Rectangle()
+                    .fill(.regularMaterial)
+                    .opacity(colorScheme == .dark ? 0.28 : 0.38)
+                LinearGradient(
+                    colors: [
+                        Color.accentColor.opacity(colorScheme == .dark ? 0.055 : 0.04),
+                        Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.20 : 0.34),
+                        Color.clear
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+        } else {
+            Color(nsColor: .windowBackgroundColor)
+        }
+    }
+}
+
+private struct FundPanelSurfaceModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let cornerRadius: CGFloat
+    let tint: Color?
+    let interactive: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content
+                .glassEffect(.regular.tint(tint).interactive(interactive), in: shape)
+                .overlay {
+                    shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
+        } else if reduceTransparency {
+            content
+                .background(Color(nsColor: .windowBackgroundColor), in: shape)
+                .overlay {
+                    shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay {
+                    shape.stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                }
+        }
+    }
+}
+
+private struct FundRowSurfaceModifier: ViewModifier {
+    let isHovered: Bool
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+        content
+            .background {
+                shape.fill(Color.primary.opacity(isHovered ? 0.055 : 0.028))
+            }
+            .overlay {
+                shape.stroke(Color.primary.opacity(isHovered ? 0.10 : 0.055), lineWidth: 0.5)
+            }
     }
 }

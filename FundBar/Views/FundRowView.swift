@@ -9,8 +9,17 @@ struct FundRowView: View {
     let isTradingDay: Bool
     let onDelete: () -> Void
     let onEditHolding: () -> Void
+    @State private var isHovered = false
 
-    init(fund: Fund, holding: WatchedFund?, historyData: [HistoryNav] = [], hasDCAPlan: Bool = false, isTradingDay: Bool = true, onDelete: @escaping () -> Void, onEditHolding: @escaping () -> Void) {
+    init(
+        fund: Fund,
+        holding: WatchedFund?,
+        historyData: [HistoryNav] = [],
+        hasDCAPlan: Bool = false,
+        isTradingDay: Bool = true,
+        onDelete: @escaping () -> Void,
+        onEditHolding: @escaping () -> Void
+    ) {
         self.fund = fund
         self.holding = holding
         self.historyData = historyData
@@ -22,7 +31,6 @@ struct FundRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // 左侧: 基金名称 + 代码 + 持仓
             VStack(alignment: .leading, spacing: 3) {
                 Text(fund.name)
                     .font(.system(size: 13, weight: .medium))
@@ -36,10 +44,10 @@ struct FundRowView: View {
                     if let h = holding, !h.fundType.isEmpty {
                         Text(h.fundType)
                             .font(.system(size: 9))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(fundTypeColor(h.fundType))
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(fundTypeColor(h.fundType), in: RoundedRectangle(cornerRadius: 3))
+                            .background(fundTypeColor(h.fundType).opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     }
 
                     if let h = holding, h.hasHolding {
@@ -48,16 +56,16 @@ struct FundRowView: View {
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 3))
+                            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     }
 
                     if hasDCAPlan {
                         Text("定投")
                             .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.orange)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(.orange, in: RoundedRectangle(cornerRadius: 3))
+                            .background(.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     }
                 }
             }
@@ -93,14 +101,14 @@ struct FundRowView: View {
                             .foregroundStyle(changeColor)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                            .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                     } else {
                         Text("休市")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4))
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                     }
                 }
 
@@ -113,9 +121,12 @@ struct FundRowView: View {
                 }
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .contentShape(Rectangle())
+        .frame(minHeight: 58)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .fundRowSurface(isHovered: isHovered)
+        .onHover { isHovered = $0 }
         .contextMenu {
             Button {
                 onEditHolding()

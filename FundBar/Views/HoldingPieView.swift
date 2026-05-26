@@ -13,8 +13,14 @@ struct HoldingPieView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Text("持仓分布")
-                .font(.system(size: 12, weight: .semibold))
+            HStack {
+                Text("持仓分布")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Text(totalValueText)
+                    .font(.system(size: 10).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
 
             if slices.isEmpty {
                 Text("暂无持仓数据")
@@ -50,6 +56,7 @@ struct HoldingPieView: View {
             }
         }
         .padding(12)
+        .fundRowSurface(isHovered: false, cornerRadius: 12)
     }
 
     private var pieChart: some View {
@@ -79,5 +86,12 @@ struct HoldingPieView: View {
             }
         }
         .frame(width: 90, height: 90)
+        .background(Color.primary.opacity(0.026), in: Circle())
+    }
+
+    private var totalValueText: String {
+        let total = slices.reduce(0) { $0 + $1.value }
+        guard total > 0 else { return "暂无" }
+        return String(format: "%.0f", total)
     }
 }

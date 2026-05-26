@@ -5,6 +5,13 @@ struct FundBarApp: App {
     @StateObject private var viewModel = FundViewModel()
 
     var body: some Scene {
+        Window("FundBar", id: "main") {
+            MainWindowView(viewModel: viewModel)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 980, height: 720)
+        .windowResizability(.contentMinSize)
+
         MenuBarExtra {
             ContentView(viewModel: viewModel)
         } label: {
