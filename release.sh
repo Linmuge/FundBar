@@ -1,20 +1,52 @@
 #!/bin/bash
-set -ex
+set -euo pipefail
 
-# 1. 禁用自动签名进行 Build
-xcodebuild -project /Users/linmuge/XCodeProjects/FundBar/FundBar.xcodeproj -scheme FundBar -configuration Release CODE_SIGNING_ALLOWED=NO build
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT="$ROOT_DIR/FundBar.xcodeproj"
+SCHEME="FundBar"
+DERIVED_DATA="${DERIVED_DATA:-/tmp/FundBar-Release-DerivedData}"
+RELEASE_DIR="$ROOT_DIR/release"
+STAGING_DIR="$(mktemp -d)"
+SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application: Xingtai Muge Information Technology Co., Ltd. (99M5SZBF38)}"
+TEAM_ID="${TEAM_ID:-99M5SZBF38}"
+DMG_PATH="$RELEASE_DIR/FundBar-macOS.dmg"
 
-# 2. 强行使用指定的 Developer ID Application 证书进行签名
-codesign --deep --force --sign "Developer ID Application: Xingtai Muge Information Technology Co., Ltd. (99M5SZBF38)" --options runtime /Users/linmuge/Library/Developer/Xcode/DerivedData/FundBar-exoxxglsfmopbeggdxtjeqspfmmw/Build/Products/Release/FundBar.app
+cleanup() {
+    rm -rf "$STAGING_DIR"
+}
+trap cleanup EXIT
 
-# 3. 创建 DMG
-rm -f FundBar.dmg
-hdiutil create -volname FundBar -srcfolder /Users/linmuge/Library/Developer/Xcode/DerivedData/FundBar-exoxxglsfmopbeggdxtjeqspfmmw/Build/Products/Release/FundBar.app -ov -format UDZO FundBar.dmg
+rm -rf "$DERIVED_DATA" "$RELEASE_DIR"
+mkdir -p "$RELEASE_DIR"
 
-# 4. 提交版本号变更
-git add .
-git commit -m "chore: bump version to v2.3.2" || true
-git push || true
+xcodebuild \
+    -project "$PROJECT" \
+    -scheme "$SCHEME" \
+    -configuration Release \
+    -derivedDataPath "$DERIVED_DATA" \
+    CODE_SIGN_STYLE=Manual \
+    DEVELOPMENT_TEAM="$TEAM_ID" \
+    CODE_SIGN_IDENTITY="$SIGN_IDENTITY" \
+    OTHER_CODE_SIGN_FLAGS="--timestamp" \
+    build
 
-# 5. 推送新版本 Tag 和 Release
-gh release create v2.3.2 FundBar.dmg -t "FundBar v2.3.2: 待确认金额买入体验升级" -n "本次重大更新全面支持了【按金额买入】功能，系统会自动将资金挂起并在确认日自动拉取历史净值进行份额一键换算！此外还支持了具体的日期选择以及核心的长假顺延拦截算法。"
+APP_PATH="$DERIVED_DATA/Build/Products/Release/FundBar.app"
+
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+spctl -a -vv -t exec "$APP_PATH" || true
+
+cp -R "$APP_PATH" "$STAGING_DIR/"
+ln -s /Applications "$STAGING_DIR/Applications"
+
+hdiutil create \
+    -volname FundBar \
+    -srcfolder "$STAGING_DIR" \
+    -ov \
+    -format UDZO \
+    "$DMG_PATH"
+
+codesign --force --sign "$SIGN_IDENTITY" --timestamp "$DMG_PATH"
+codesign --verify --verbose=2 "$DMG_PATH"
+spctl -a -t open --context context:primary-signature -v "$DMG_PATH"
+
+echo "$DMG_PATH"

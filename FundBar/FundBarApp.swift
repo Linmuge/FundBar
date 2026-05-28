@@ -12,6 +12,12 @@ struct FundBarApp: App {
         .defaultSize(width: 980, height: 720)
         .windowResizability(.contentMinSize)
 
+        Window("AI 分析", id: "ai-analysis") {
+            AIAnalysisPageView(viewModel: viewModel)
+        }
+        .defaultSize(width: 900, height: 640)
+        .windowResizability(.contentMinSize)
+
         MenuBarExtra {
             ContentView(viewModel: viewModel)
         } label: {

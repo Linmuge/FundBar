@@ -14,6 +14,30 @@ final class FundViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var lastUpdateTime: Date?
     @Published var errorMessage: String?
+    @Published var aiBaseURL: String = "" {
+        didSet { UserDefaults.standard.set(aiBaseURL, forKey: aiBaseURLKey) }
+    }
+    @Published var aiModel: String = "" {
+        didSet { UserDefaults.standard.set(aiModel, forKey: aiModelKey) }
+    }
+    @Published var aiSystemPrompt: String = FundViewModel.defaultAISystemPrompt {
+        didSet { UserDefaults.standard.set(aiSystemPrompt, forKey: aiSystemPromptKey) }
+    }
+    @Published var aiTimeoutSeconds: Double = 180 {
+        didSet { UserDefaults.standard.set(aiTimeoutSeconds, forKey: aiTimeoutSecondsKey) }
+    }
+    @Published var aiDisclaimerAccepted: Bool = false {
+        didSet { UserDefaults.standard.set(aiDisclaimerAccepted, forKey: aiDisclaimerAcceptedKey) }
+    }
+    @Published var aiAPIKey: String = "" {
+        didSet {
+            guard aiAPIKey != oldValue else { return }
+            KeychainStore.setString(aiAPIKey, service: keychainService, account: aiAPIKeyAccount)
+        }
+    }
+    @Published var aiAnalysisText: String = ""
+    @Published var aiErrorMessage: String?
+    @Published var isAIAnalyzing = false
     @Published var currentDataSource: DataSource = .tiantian {
         didSet {
             service.switchSource(to: currentDataSource)
@@ -34,6 +58,7 @@ final class FundViewModel: ObservableObject {
     // MARK: - Private Properties
 
     private let service = FundService.shared
+    private let aiAnalysisService = AIAnalysisService()
     private var refreshTimer: Timer?
     /// 交易时间刷新间隔
     private let tradingRefreshInterval: TimeInterval = 30
@@ -46,7 +71,31 @@ final class FundViewModel: ObservableObject {
     private let notifyThresholdKey = "notify_threshold"
     private let menuBarModeKey = "menu_bar_mode"
     private let sortModeKey = "sort_mode"
+    private let aiBaseURLKey = "ai_base_url"
+    private let aiModelKey = "ai_model"
+    private let aiSystemPromptKey = "ai_system_prompt"
+    private let aiTimeoutSecondsKey = "ai_timeout_seconds"
+    private let aiDisclaimerAcceptedKey = "ai_disclaimer_accepted"
+    private let aiAPIKeyAccount = "ai_api_key"
+    private let keychainService = "com.fundbar.app"
     static let showChartsKey = "showCharts"
+    static let defaultAISystemPrompt = """
+    你是一名谨慎、纪律化的基金组合交易员和风控顾问。请用中文分析用户当天基金组合走势，语气专业、直接，像交易员复盘和制定次日交易计划，而不是泛泛科普。
+
+    你会收到基金估值、持仓、交易记录、卖出记录、待确认买入、定投计划、定投执行记录和近 7 日净值。请把交易记录和定投配置纳入判断：识别成本区、仓位变化、止盈/减仓压力、低吸观察点、定投是否需要继续、暂停、加大或降低金额。
+
+    如果当前接口和模型支持联网，请结合当天市场、指数、板块、宏观和风险事件；如果无法联网，请明确说明只能基于本地数据和历史净值判断。不要编造无法确认的行情。
+
+    请使用 Markdown 输出，并在开头注明“AI 生成内容，仅供参考，不构成投资建议”。建议必须是参考性表达，不要承诺收益，不要替用户做确定性买卖决定。
+
+    输出结构：
+    1. 今日盘面与组合结论
+    2. 交易员视角的仓位判断
+    3. 可加仓观察清单
+    4. 可减仓/止盈观察清单
+    5. 定投计划调整建议
+    6. 今日风险与执行纪律
+    """
 
     // MARK: - Computed Properties
 
@@ -179,6 +228,15 @@ final class FundViewModel: ObservableObject {
         watchedFunds.contains { $0.hasHolding }
     }
 
+    var canAnalyzeWithAI: Bool {
+        !aiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !aiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !aiModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !aiSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        aiDisclaimerAccepted &&
+        !funds.isEmpty
+    }
+
     /// 总持仓市值
     var totalMarketValue: Double {
         watchedFunds.reduce(0) { total, wf in
@@ -289,6 +347,15 @@ final class FundViewModel: ObservableObject {
            let sort = FundSortMode(rawValue: savedSort) {
             _sortMode = Published(initialValue: sort)
         }
+
+        _aiBaseURL = Published(initialValue: UserDefaults.standard.string(forKey: aiBaseURLKey) ?? "")
+        _aiModel = Published(initialValue: UserDefaults.standard.string(forKey: aiModelKey) ?? "")
+        let savedPrompt = UserDefaults.standard.string(forKey: aiSystemPromptKey) ?? ""
+        _aiSystemPrompt = Published(initialValue: savedPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Self.defaultAISystemPrompt : savedPrompt)
+        let savedTimeout = UserDefaults.standard.double(forKey: aiTimeoutSecondsKey)
+        _aiTimeoutSeconds = Published(initialValue: savedTimeout > 0 ? savedTimeout : 180)
+        _aiDisclaimerAccepted = Published(initialValue: UserDefaults.standard.bool(forKey: aiDisclaimerAcceptedKey))
+        _aiAPIKey = Published(initialValue: KeychainStore.string(service: keychainService, account: aiAPIKeyAccount) ?? "")
 
         startAutoRefresh()
         Task { await refresh() }
@@ -494,8 +561,58 @@ final class FundViewModel: ObservableObject {
         watchedFunds.first { $0.code == code }
     }
 
+    /// 联网模型分析当天走势和持仓操作建议
+    func analyzeTodayWithAI() async {
+        let baseURL = aiBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = aiAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = aiModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        let systemPrompt = aiSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let timeout = min(max(aiTimeoutSeconds, 30), 300)
+
+        guard !baseURL.isEmpty, !apiKey.isEmpty, !model.isEmpty, !systemPrompt.isEmpty else {
+            aiErrorMessage = "请先填写 AI 接口 URL、Key、模型和 Prompt"
+            return
+        }
+        guard aiDisclaimerAccepted else {
+            aiErrorMessage = "请先阅读并确认 AI 生成与免责声明"
+            return
+        }
+        guard !watchedCodes.isEmpty else {
+            aiErrorMessage = "请先添加基金"
+            return
+        }
+
+        isAIAnalyzing = true
+        aiErrorMessage = nil
+        defer { isAIAnalyzing = false }
+
+        await refresh(reloadHistory: true)
+
+        guard !funds.isEmpty else {
+            aiErrorMessage = "基金数据刷新失败，无法生成分析"
+            return
+        }
+
+        do {
+            let context = buildAIAnalysisContext()
+            let result = try await aiAnalysisService.analyze(
+                baseURL: baseURL,
+                apiKey: apiKey,
+                model: model,
+                systemPrompt: systemPrompt,
+                context: context,
+                timeoutSeconds: timeout
+            )
+            withAnimation(.easeInOut(duration: 0.2)) {
+                aiAnalysisText = result
+            }
+        } catch {
+            aiErrorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
     /// 手动刷新
-    func refresh() async {
+    func refresh(reloadHistory: Bool = false) async {
         let codes = watchedCodes
         guard !codes.isEmpty else {
             funds = []
@@ -533,14 +650,21 @@ final class FundViewModel: ObservableObject {
         withAnimation(.easeInOut(duration: 0.3)) {
             self.funds = result
             self.lastUpdateTime = Date()
-            self.isLoading = false
         }
 
         // 涨跌通知检查
         NotificationService.shared.checkAndNotify(funds: result, threshold: notifyThreshold)
 
-        // 异步加载历史数据（不阻塞主刷新）
-        Task { await fetchHistoryData(codes: codes) }
+        if reloadHistory {
+            await fetchHistoryData(codes: codes, forceReload: true)
+        } else {
+            // 异步加载历史数据（不阻塞主刷新）
+            Task { await fetchHistoryData(codes: codes) }
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            self.isLoading = false
+        }
 
         // 收盘后异步同步当日确认净值
         Task { await syncConfirmedNav(codes: codes) }
@@ -635,6 +759,152 @@ final class FundViewModel: ObservableObject {
         return f.string(from: Date())
     }
 
+    func resetAISystemPrompt() {
+        aiSystemPrompt = Self.defaultAISystemPrompt
+    }
+
+    private func buildAIAnalysisContext() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        let updateText = lastUpdateTime.map { formatter.string(from: $0) } ?? "未刷新"
+        let tradingState: String
+        if isTradingTime {
+            tradingState = "交易中"
+        } else if isTradingDay {
+            tradingState = "非交易时段"
+        } else {
+            tradingState = "休市"
+        }
+
+        var lines: [String] = [
+            "分析时间：\(formatter.string(from: Date()))",
+            "基金数据更新时间：\(updateText)",
+            "交易状态：\(tradingState)",
+            "数据说明：基金估值来自应用内基金接口；联网市场信息取决于你配置的 AI 接口和模型能力。",
+            "交易记录说明：买入记录按份额和成本净值记录；卖出记录按卖出份额、卖出净值和当时估算已实现盈亏记录；待确认买入按金额和目标确认日期记录。",
+            "",
+            "组合概览：",
+            "- 自选基金数量：\(funds.count)",
+            "- 总市值：\(formatMoney(totalMarketValue))",
+            "- 持仓成本：\(formatMoney(totalCost))",
+            "- 今日预估盈亏：\(formatSignedMoney(todayEstimatedProfit))",
+            "- 浮动盈亏：\(formatSignedMoney(totalProfitLoss))（\(formatSignedPercent(totalProfitPercent))）",
+            "- 已实现盈亏：\(formatSignedMoney(totalRealizedProfit))",
+            "- 账户总盈亏：\(formatSignedMoney(totalAccountProfitLoss))",
+            "",
+            "基金明细："
+        ]
+
+        for fund in sortedFunds {
+            let watched = watchedFunds.first { $0.code == fund.fundcode }
+            let shares = watched?.shares ?? 0
+            let costPrice = watched?.costPrice ?? 0
+            let marketValue = watched?.marketValue(nav: fund.bestNav) ?? 0
+            let profitLoss = watched?.profitLoss(nav: fund.bestNav) ?? 0
+            let profitPercent = watched?.profitPercent(nav: fund.bestNav) ?? 0
+            let fundType = watched?.fundType.isEmpty == false ? watched?.fundType ?? "" : "未分类"
+            let dcaPlanText = formatDCAPlan(watched)
+            let dcaStatsText = formatDCAStats(watched, nav: fund.bestNav)
+            let transactionText = formatTransactionRecords(watched?.holdings ?? [])
+            let history = fundHistory[fund.fundcode]?.prefix(7).map {
+                "\($0.date):\(String(format: "%.4f", $0.nav))"
+            }.joined(separator: ", ") ?? "暂无"
+
+            lines.append(
+                """
+                - \(fund.name)（\(fund.fundcode)，\(fundType)）
+                  当日涨跌幅：\(formatSignedPercent(fund.changePercent))，单位净值：\(fund.dwjz)，估算净值：\(fund.gsz)，估值时间：\(fund.gztime)
+                  持仓份额：\(String(format: "%.2f", shares))，持仓均价：\(String(format: "%.4f", costPrice))，市值：\(formatMoney(marketValue))，浮动盈亏：\(formatSignedMoney(profitLoss))（\(formatSignedPercent(profitPercent))）
+                  定投配置：\(dcaPlanText)
+                  定投统计：\(dcaStatsText)
+                  交易记录：\(transactionText)
+                  近 7 日净值：\(history)
+                """
+            )
+        }
+
+        lines.append(
+            """
+
+            请给出适合今天查看的简洁建议，按基金或类别说明“可观察加仓”“可减仓/止盈”“继续持有/观望”的原因，并明确主要风险。不要要求用户补充数据。
+            """
+        )
+
+        return lines.joined(separator: "\n")
+    }
+
+    private func formatDCAPlan(_ watched: WatchedFund?) -> String {
+        guard let plan = watched?.dcaPlan, plan.amount > 0 else {
+            return "未设置"
+        }
+        let dueText = isDCADueToday(code: watched?.code ?? "") ? "今日应执行" : "今日无需执行或已执行"
+        return "\(plan.frequency.rawValue)，每期 \(formatMoney(plan.amount)) 元，\(dueText)"
+    }
+
+    private func formatDCAStats(_ watched: WatchedFund?, nav: Double) -> String {
+        guard let watched else { return "无" }
+        guard watched.dcaCount > 0 else { return "暂无定投记录" }
+        return "次数 \(watched.dcaCount)，累计投入 \(formatMoney(watched.dcaTotalInvested))，累计份额 \(String(format: "%.2f", watched.dcaTotalShares))，平均成本 \(String(format: "%.4f", watched.dcaAverageCost))，按当前净值收益率 \(formatSignedPercent(watched.dcaProfitPercent(nav: nav)))"
+    }
+
+    private func formatTransactionRecords(_ records: [HoldingRecord]) -> String {
+        guard !records.isEmpty else { return "暂无交易记录" }
+
+        let sortedRecords = records
+            .sorted { lhs, rhs in
+                if lhs.date == rhs.date { return lhs.id < rhs.id }
+                if lhs.date.isEmpty { return false }
+                if rhs.date.isEmpty { return true }
+                return lhs.date < rhs.date
+            }
+        let visibleRecords = sortedRecords.suffix(30)
+        let prefix = sortedRecords.count > visibleRecords.count ? "共 \(sortedRecords.count) 笔，以下为最近 \(visibleRecords.count) 笔：" : ""
+
+        return prefix + visibleRecords
+            .suffix(30)
+            .map(formatTransactionRecord)
+            .joined(separator: "；")
+    }
+
+    private func formatTransactionRecord(_ record: HoldingRecord) -> String {
+        let date = record.date.isEmpty ? "日期未知" : record.date
+        let feeText = record.fee.map { "，手续费 \(formatMoney($0))" } ?? ""
+        let noteText = record.note.isEmpty ? "" : "，备注 \(record.note)"
+
+        if record.status == .pending {
+            let amountText = record.buyAmount.map(formatMoney) ?? "未知"
+            let targetDate = record.targetConfirmDate ?? "待确认"
+            return "\(date) 待确认买入，金额 \(amountText)，目标确认日 \(targetDate)\(feeText)\(noteText)"
+        }
+
+        switch record.transactionType {
+        case .buy:
+            let source = record.isDCA ? "定投买入" : "买入"
+            let amount = record.shares * record.costPrice
+            return "\(date) \(source)，份额 \(String(format: "%.2f", record.shares))，净值 \(String(format: "%.4f", record.costPrice))，金额 \(formatMoney(amount))\(feeText)\(noteText)"
+        case .sell:
+            let realizedText = record.realizedProfit.map { "，已实现盈亏 \(formatSignedMoney($0))" } ?? ""
+            let amount = record.shares * record.costPrice
+            return "\(date) 卖出，份额 \(String(format: "%.2f", record.shares))，卖出净值 \(String(format: "%.4f", record.costPrice))，卖出金额 \(formatMoney(amount))\(feeText)\(realizedText)\(noteText)"
+        }
+    }
+
+    private func formatMoney(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private func formatSignedMoney(_ value: Double) -> String {
+        let sign = value >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.2f", value))"
+    }
+
+    private func formatSignedPercent(_ value: Double) -> String {
+        let sign = value >= 0 ? "+" : ""
+        return "\(sign)\(String(format: "%.2f", value))%"
+    }
+
     /// 从基金名称解析类型
     private func backfillFundTypesFromName() {
         for i in 0..<watchedFunds.count {
@@ -674,11 +944,11 @@ final class FundViewModel: ObservableObject {
     }
 
     /// 获取所有基金的7日历史净值
-    private func fetchHistoryData(codes: [String]) async {
+    private func fetchHistoryData(codes: [String], forceReload: Bool = false) async {
         var results: [(String, [HistoryNav])] = []
         await withTaskGroup(of: (String, [HistoryNav]).self) { group in
             for code in codes {
-                if fundHistory[code] != nil { continue }
+                if !forceReload, fundHistory[code] != nil { continue }
                 group.addTask {
                     let history = await self.service.fetchHistory(code: code, days: 7)
                     return (code, history)

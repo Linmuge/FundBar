@@ -5,6 +5,7 @@ import AppKit
 struct MainWindowView: View {
     @ObservedObject var viewModel: FundViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.openWindow) private var openWindow
     @State private var showAddFund = false
     @State private var showEditHolding = false
     @State private var editingFundCode: String?
@@ -93,7 +94,16 @@ struct MainWindowView: View {
             .frame(width: 120)
 
             Button {
-                Task { await viewModel.refresh() }
+                openWindow(id: "ai-analysis")
+            } label: {
+                Label("AI 分析", systemImage: "sparkles")
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .help("打开 AI 分析")
+
+            Button {
+                Task { await viewModel.refresh(reloadHistory: true) }
             } label: {
                 ToolbarIcon(systemName: "arrow.clockwise", isActive: viewModel.isLoading)
             }

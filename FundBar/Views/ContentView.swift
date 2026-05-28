@@ -110,7 +110,7 @@ struct ContentView: View {
 
             Button {
                 Task {
-                    await viewModel.refresh()
+                    await viewModel.refresh(reloadHistory: true)
                 }
             } label: {
                 ToolbarIcon(systemName: "arrow.clockwise", isActive: viewModel.isLoading)
@@ -531,6 +531,15 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("打开主窗口")
             .help("打开主窗口")
+
+            Button {
+                openWindow(id: "ai-analysis")
+            } label: {
+                ToolbarIcon(systemName: "sparkles", size: 11, diameter: 26, isActive: viewModel.isAIAnalyzing)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("打开 AI 分析")
+            .help("AI 分析")
 
             // 设置按钮
             Button {

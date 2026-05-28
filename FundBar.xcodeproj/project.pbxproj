@@ -20,6 +20,9 @@
 		AA000012 /* HoldingPieView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000014 /* HoldingPieView.swift */; };
 		AA000013 /* ProfitChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000015 /* ProfitChartView.swift */; };
 		AA000014 /* MainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000016 /* MainWindowView.swift */; };
+		AA000015 /* AIAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000017 /* AIAnalysisService.swift */; };
+		AA000016 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000018 /* KeychainStore.swift */; };
+		AA000017 /* AIAnalysisPageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB000019 /* AIAnalysisPageView.swift */; };
 		AA000008 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AB000008 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -40,6 +43,9 @@
 		AB000014 /* HoldingPieView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoldingPieView.swift; sourceTree = "<group>"; };
 		AB000015 /* ProfitChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfitChartView.swift; sourceTree = "<group>"; };
 		AB000016 /* MainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindowView.swift; sourceTree = "<group>"; };
+		AB000017 /* AIAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisService.swift; sourceTree = "<group>"; };
+		AB000018 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		AB000019 /* AIAnalysisPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAnalysisPageView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -86,7 +92,9 @@
 		AD000004 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				AB000017 /* AIAnalysisService.swift */,
 				AB000004 /* FundService.swift */,
+				AB000018 /* KeychainStore.swift */,
 				AB000013 /* NotificationService.swift */,
 			);
 			path = Services;
@@ -102,10 +110,11 @@
 		};
 		AD000006 /* Views */ = {
 			isa = PBXGroup;
-			children = (
-				AB000002 /* ContentView.swift */,
-				AB000016 /* MainWindowView.swift */,
-				AB000006 /* FundRowView.swift */,
+				children = (
+					AB000019 /* AIAnalysisPageView.swift */,
+					AB000002 /* ContentView.swift */,
+					AB000016 /* MainWindowView.swift */,
+					AB000006 /* FundRowView.swift */,
 				AB000007 /* AddFundView.swift */,
 				AB000011 /* EditHoldingView.swift */,
 				AB000012 /* MiniChartView.swift */,
@@ -195,7 +204,9 @@
 				AA000001 /* FundBarApp.swift in Sources */,
 				AA000002 /* ContentView.swift in Sources */,
 				AA000003 /* Fund.swift in Sources */,
+				AA000015 /* AIAnalysisService.swift in Sources */,
 				AA000004 /* FundService.swift in Sources */,
+				AA000016 /* KeychainStore.swift in Sources */,
 				AA000005 /* FundViewModel.swift in Sources */,
 				AA000006 /* FundRowView.swift in Sources */,
 				AA000007 /* AddFundView.swift in Sources */,
@@ -205,6 +216,7 @@
 				AA000012 /* HoldingPieView.swift in Sources */,
 				AA000013 /* ProfitChartView.swift in Sources */,
 				AA000014 /* MainWindowView.swift in Sources */,
+				AA000017 /* AIAnalysisPageView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -335,14 +347,14 @@
 				CODE_SIGN_ENTITLEMENTS = FundBar/FundBar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.3.3;
+				MARKETING_VERSION = 2.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fundbar.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -358,14 +370,14 @@
 				CODE_SIGN_ENTITLEMENTS = FundBar/FundBar.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
 				INFOPLIST_KEY_LSUIElement = NO;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.3.3;
+				MARKETING_VERSION = 2.3.4;
 				PRODUCT_BUNDLE_IDENTIFIER = com.fundbar.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;

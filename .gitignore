@@ -12,5 +12,7 @@ xcuserdata/
 
 # Build
 *.ipa
+*.dmg
 *.dSYM.zip
 *.dSYM
+release/
