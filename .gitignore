@@ -16,3 +16,6 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 release/
+
+# Design exploration (mockups / screenshots)
+redesign-demos/
