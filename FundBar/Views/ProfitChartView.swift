@@ -23,7 +23,7 @@ struct ProfitChartView: View {
                     let sign = pt.profit >= 0 ? "+" : ""
                     Text("\(pt.date.suffix(5)) \(sign)\(String(format: "%.2f", pt.profit))")
                         .font(.system(size: 10).monospacedDigit())
-                        .foregroundStyle(pt.profit >= 0 ? .red : .green)
+                        .foregroundStyle(pt.profit >= 0 ? Color.fundUp : Color.fundDown)
                 }
             }
 
@@ -33,7 +33,7 @@ struct ProfitChartView: View {
                 }
                 .frame(height: 80)
                 .padding(8)
-                .background(Color.primary.opacity(0.026), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(Color.primary.opacity(0.024), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else {
                 Text("数据不足")
                     .font(.system(size: 11))
@@ -42,7 +42,7 @@ struct ProfitChartView: View {
             }
         }
         .padding(12)
-        .fundRowSurface(isHovered: false, cornerRadius: 12)
+        .fundRowSurface(isHovered: false, cornerRadius: FundBarDesign.compactPanelRadius)
     }
 
     private func chartCanvas(width: CGFloat) -> some View {
@@ -75,7 +75,7 @@ struct ProfitChartView: View {
             }
 
             let lastValue = values.last ?? 0
-            let lineColor: Color = lastValue >= 0 ? .red : .green
+            let lineColor: Color = lastValue >= 0 ? .fundUp : .fundDown
             context.stroke(path, with: .color(lineColor), lineWidth: 1.5)
 
             // 填充

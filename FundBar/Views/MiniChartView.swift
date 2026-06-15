@@ -12,9 +12,9 @@ struct MiniChartView: View {
         if data.count >= 2 {
             chartView
                 .frame(width: width, height: height)
-                .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .background(Color.primary.opacity(0.024), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         } else {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.secondary.opacity(0.10))
                 .frame(width: width, height: height)
         }
@@ -44,7 +44,7 @@ struct MiniChartView: View {
                     }
                 }
 
-                let color: Color = isUp ? .red : .green
+                let color: Color = isUp ? .fundUp : .fundDown
                 context.stroke(path, with: .color(color), lineWidth: 1.2)
 
                 var fillPath = path

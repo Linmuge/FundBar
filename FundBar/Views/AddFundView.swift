@@ -67,7 +67,7 @@ struct AddFundView: View {
                             .font(.system(size: 12, weight: .medium))
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .fundGlassButtonStyle(prominent: true)
                 .controlSize(.small)
                 .disabled(!isPureCode || isAdding)
             }
@@ -107,7 +107,7 @@ struct AddFundView: View {
                                     } else {
                                         Image(systemName: "plus.circle")
                                             .font(.system(size: 12))
-                                            .foregroundStyle(.blue)
+                                            .foregroundStyle(Color.accentColor)
                                     }
                                 }
                                 .padding(.horizontal, 8)
@@ -124,7 +124,7 @@ struct AddFundView: View {
                     .padding(4)
                 }
                 .frame(maxHeight: 200)
-                .fundPanelSurface(cornerRadius: 12)
+                .fundPanelSurface(cornerRadius: FundBarDesign.compactPanelRadius)
             }
 
             if isSearching {
@@ -248,7 +248,7 @@ struct AddFundView: View {
             }
         }
         .padding(16)
-        .fundPanelSurface(cornerRadius: 18, tint: .blue.opacity(0.06), interactive: true)
+        .fundPanelSurface(cornerRadius: FundBarDesign.panelRadius, interactive: true)
         .onAppear {
             isFocused = true
         }

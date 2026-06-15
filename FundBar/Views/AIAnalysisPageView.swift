@@ -41,7 +41,7 @@ struct AIAnalysisPageView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Label("AI 分析", systemImage: "sparkles")
                             .font(.system(size: 18, weight: .semibold))
-                        Text(viewModel.isAIAnalyzing ? "正在生成基金走势建议" : "配置接口后生成当天走势分析")
+                        Text(viewModel.isAIAnalyzing ? "正在生成基金组合建议" : "配置接口后生成当天基金组合分析")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -84,8 +84,8 @@ struct AIAnalysisPageView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         infoRow(title: "基金数", value: "\(viewModel.funds.count)")
-                        infoRow(title: "今日预估", value: signedMoneyText(viewModel.todayEstimatedProfit))
-                        infoRow(title: "浮动盈亏", value: signedMoneyText(viewModel.totalProfitLoss))
+                        infoRow(title: "今日预估", value: signedMoneyText(viewModel.todayEstimatedProfit), valueColor: Color.fundTrend(viewModel.todayEstimatedProfit))
+                        infoRow(title: "浮动盈亏", value: signedMoneyText(viewModel.totalProfitLoss), valueColor: Color.fundTrend(viewModel.totalProfitLoss))
                         infoRow(title: "超时设置", value: "\(Int(viewModel.aiTimeoutSeconds)) 秒")
                         infoRow(title: "免责确认", value: viewModel.aiDisclaimerAccepted ? "已确认" : "未确认")
                     }
@@ -108,18 +108,18 @@ struct AIAnalysisPageView: View {
                         .frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .fundGlassButtonStyle(prominent: true)
             .controlSize(.large)
             .disabled(!viewModel.canAnalyzeWithAI || viewModel.isAIAnalyzing)
         }
         .padding(16)
-        .fundPanelSurface(cornerRadius: 20, tint: .mint.opacity(0.05), interactive: true)
+        .fundPanelSurface(cornerRadius: FundBarDesign.panelRadius, interactive: true)
     }
 
     private var promptSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Label("交易员 Prompt", systemImage: "text.quote")
+                Label("基金交易员 Prompt", systemImage: "text.quote")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer()
             }
@@ -130,7 +130,7 @@ struct AIAnalysisPageView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "square.and.pencil")
-                    Text("编辑交易员 Prompt")
+                    Text("编辑基金交易员 Prompt")
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
@@ -138,7 +138,7 @@ struct AIAnalysisPageView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .fundGlassButtonStyle()
             .controlSize(.regular)
             .disabled(viewModel.isAIAnalyzing)
 
@@ -191,7 +191,7 @@ struct AIAnalysisPageView: View {
                 } label: {
                     Label("复制", systemImage: "doc.on.doc")
                 }
-                .buttonStyle(.bordered)
+                .fundGlassButtonStyle()
                 .controlSize(.small)
                 .disabled(viewModel.aiAnalysisText.isEmpty)
             }
@@ -213,19 +213,19 @@ struct AIAnalysisPageView: View {
                     MarkdownAnalysisView(markdown: viewModel.aiAnalysisText)
                         .padding(16)
                 }
-                .background(.white.opacity(0.26), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(Color.primary.opacity(0.024), in: RoundedRectangle(cornerRadius: FundBarDesign.compactPanelRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: FundBarDesign.compactPanelRadius, style: .continuous)
                         .stroke(.primary.opacity(0.06), lineWidth: 1)
                 )
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .fundPanelSurface(cornerRadius: 20, tint: .blue.opacity(0.04), interactive: true)
+        .fundPanelSurface(cornerRadius: FundBarDesign.panelRadius, interactive: true)
     }
 
-    private func infoRow(title: String, value: String) -> some View {
+    private func infoRow(title: String, value: String, valueColor: Color? = nil) -> some View {
         HStack {
             Text(title)
                 .font(.system(size: 12))
@@ -233,6 +233,7 @@ struct AIAnalysisPageView: View {
             Spacer()
             Text(value)
                 .font(.system(size: 12, weight: .medium).monospacedDigit())
+                .foregroundStyle(valueColor ?? Color.primary)
         }
     }
 
@@ -262,7 +263,7 @@ private struct PromptEditorSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("编辑交易员 Prompt", systemImage: "text.quote")
+                    Label("编辑基金交易员 Prompt", systemImage: "text.quote")
                         .font(.system(size: 18, weight: .semibold))
                     Text("用于控制 AI 的分析角色、输出结构和风控口径。")
                         .font(.system(size: 12))
@@ -282,9 +283,9 @@ private struct PromptEditorSheet: View {
                 .frame(minWidth: 600, minHeight: 360)
                 .padding(10)
                 .scrollContentBackground(.hidden)
-                .background(.white.opacity(0.28), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.primary.opacity(0.024), in: RoundedRectangle(cornerRadius: FundBarDesign.compactPanelRadius, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    RoundedRectangle(cornerRadius: FundBarDesign.compactPanelRadius, style: .continuous)
                         .stroke(.primary.opacity(0.08), lineWidth: 1)
                 )
                 .disabled(isAnalyzing)
@@ -301,7 +302,7 @@ private struct PromptEditorSheet: View {
                 Button("保存") {
                     onSave()
                 }
-                .buttonStyle(.borderedProminent)
+                .fundGlassButtonStyle(prominent: true)
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canSave)
             }
@@ -362,7 +363,9 @@ private struct MarkdownAnalysisView: View {
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
-                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        case .table(let rows):
+            MarkdownTableView(rows: rows)
         case .divider:
             Divider()
         }
@@ -393,6 +396,7 @@ private struct MarkdownAnalysisView: View {
         var blocks: [MarkdownBlock] = []
         var paragraph: [String] = []
         var codeLines: [String] = []
+        var tableLines: [String] = []
         var isInCodeBlock = false
 
         func appendParagraph() {
@@ -401,6 +405,16 @@ private struct MarkdownAnalysisView: View {
                 blocks.append(MarkdownBlock(id: blocks.count, kind: .paragraph(text)))
             }
             paragraph.removeAll()
+        }
+
+        func appendTable() {
+            guard !tableLines.isEmpty else { return }
+            if let rows = parseMarkdownTable(tableLines) {
+                blocks.append(MarkdownBlock(id: blocks.count, kind: .table(rows)))
+            } else {
+                paragraph.append(contentsOf: tableLines)
+            }
+            tableLines.removeAll()
         }
 
         for rawLine in markdown.components(separatedBy: .newlines) {
@@ -424,9 +438,18 @@ private struct MarkdownAnalysisView: View {
             }
 
             if trimmed.isEmpty {
+                appendTable()
                 appendParagraph()
                 continue
             }
+
+            if isPotentialTableLine(trimmed) {
+                appendParagraph()
+                tableLines.append(rawLine)
+                continue
+            }
+
+            appendTable()
 
             if trimmed == "---" || trimmed == "***" {
                 appendParagraph()
@@ -464,6 +487,7 @@ private struct MarkdownAnalysisView: View {
         if isInCodeBlock {
             blocks.append(MarkdownBlock(id: blocks.count, kind: .code(codeLines.joined(separator: "\n"))))
         }
+        appendTable()
         appendParagraph()
         return blocks
     }
@@ -489,6 +513,120 @@ private struct MarkdownAnalysisView: View {
         guard textStart < line.endIndex, line[textStart] == " " else { return nil }
         return (index, String(line[line.index(after: textStart)...]))
     }
+
+    private func isPotentialTableLine(_ line: String) -> Bool {
+        line.contains("|") && splitTableCells(line).count >= 2
+    }
+
+    private func parseMarkdownTable(_ lines: [String]) -> [[String]]? {
+        let rows = lines.map { splitTableCells($0) }
+        var parsedRows: [[String]] = []
+        var hasSeparator = false
+
+        for row in rows {
+            if isTableSeparator(row) {
+                hasSeparator = true
+                continue
+            }
+            parsedRows.append(row)
+        }
+
+        guard hasSeparator, !parsedRows.isEmpty else { return nil }
+        return parsedRows
+    }
+
+    private func splitTableCells(_ line: String) -> [String] {
+        var text = line.trimmingCharacters(in: .whitespaces)
+        if text.hasPrefix("|") {
+            text.removeFirst()
+        }
+        if text.hasSuffix("|") {
+            text.removeLast()
+        }
+        return text
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+    }
+
+    private func isTableSeparator(_ row: [String]) -> Bool {
+        guard !row.isEmpty else { return false }
+        return row.allSatisfy { cell in
+            let text = cell.trimmingCharacters(in: .whitespaces)
+            guard text.contains("-") else { return false }
+            return text.allSatisfy { character in
+                character == "-" || character == ":" || character == " "
+            }
+        }
+    }
+}
+
+private struct MarkdownTableView: View {
+    let rows: [[String]]
+
+    private var columnCount: Int {
+        max(rows.map(\.count).max() ?? 0, 1)
+    }
+
+    private var normalizedRows: [[String]] {
+        rows.map { row in
+            row + Array(repeating: "", count: max(columnCount - row.count, 0))
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(normalizedRows.indices, id: \.self) { rowIndex in
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(0..<columnCount, id: \.self) { columnIndex in
+                        tableCell(
+                            normalizedRows[rowIndex][columnIndex],
+                            isHeader: rowIndex == 0,
+                            rowIndex: rowIndex,
+                            columnIndex: columnIndex
+                        )
+                    }
+                }
+
+                if rowIndex < normalizedRows.count - 1 {
+                    Divider()
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(.primary.opacity(0.08), lineWidth: 1)
+        )
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func tableCell(_ text: String, isHeader: Bool, rowIndex: Int, columnIndex: Int) -> some View {
+        let attributed = (try? AttributedString(markdown: text)) ?? AttributedString(text)
+
+        return Text(attributed)
+            .font(.system(size: isHeader ? 12 : 11, weight: isHeader ? .semibold : .regular))
+            .foregroundStyle(isHeader ? Color.primary : Color.primary.opacity(0.9))
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 8)
+            .background(tableCellBackground(isHeader: isHeader, rowIndex: rowIndex))
+            .overlay(alignment: .trailing) {
+                if columnIndex < columnCount - 1 {
+                    Rectangle()
+                        .fill(.primary.opacity(0.06))
+                        .frame(width: 1)
+                }
+            }
+    }
+
+    private func tableCellBackground(isHeader: Bool, rowIndex: Int) -> Color {
+        if isHeader {
+            return Color.primary.opacity(0.06)
+        }
+        return rowIndex.isMultiple(of: 2) ? Color.clear : Color.primary.opacity(0.025)
+    }
 }
 
 private struct MarkdownBlock: Identifiable {
@@ -499,6 +637,7 @@ private struct MarkdownBlock: Identifiable {
         case numbered(index: Int, text: String)
         case quote(String)
         case code(String)
+        case table([[String]])
         case divider
     }
 

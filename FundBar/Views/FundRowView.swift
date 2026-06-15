@@ -47,7 +47,7 @@ struct FundRowView: View {
                             .foregroundStyle(fundTypeColor(h.fundType))
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(fundTypeColor(h.fundType).opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .background(fundTypeColor(h.fundType).opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
 
                     if let h = holding, h.hasHolding {
@@ -56,7 +56,7 @@ struct FundRowView: View {
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
 
                     if hasDCAPlan {
@@ -65,7 +65,7 @@ struct FundRowView: View {
                             .foregroundStyle(.orange)
                             .padding(.horizontal, 4)
                             .padding(.vertical, 1)
-                            .background(.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                            .background(.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                 }
             }
@@ -101,14 +101,14 @@ struct FundRowView: View {
                             .foregroundStyle(changeColor)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     } else {
                         Text("休市")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                     }
                 }
 
@@ -117,14 +117,14 @@ struct FundRowView: View {
                     let plSign = pl >= 0 ? "+" : ""
                     Text("\(plSign)\(String(format: "%.2f", pl))")
                         .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .foregroundStyle(pl >= 0 ? .red : .green)
+                        .foregroundStyle(pl >= 0 ? Color.fundUp : Color.fundDown)
                 }
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(minHeight: 58)
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: FundBarDesign.rowRadius, style: .continuous))
         .fundRowSurface(isHovered: isHovered)
         .onHover { isHovered = $0 }
         .contextMenu {
@@ -151,9 +151,9 @@ struct FundRowView: View {
 
     private var changeColor: Color {
         if fund.isUp {
-            return .red
+            return .fundUp
         } else if fund.isDown {
-            return .green
+            return .fundDown
         }
         return .secondary
     }

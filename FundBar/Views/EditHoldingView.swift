@@ -112,7 +112,7 @@ struct EditHoldingView: View {
                                             confirmingRecordId = nil
                                         }
                                     }
-                                    .buttonStyle(.borderedProminent)
+                                    .fundGlassButtonStyle(prominent: true)
                                     .controlSize(.mini)
                                 }
                             }
@@ -130,7 +130,7 @@ struct EditHoldingView: View {
                                                 .foregroundStyle(.orange)
                                                 .padding(.horizontal, 3)
                                                 .padding(.vertical, 1)
-                                                .background(.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                                .background(.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                         }
                                         HStack(spacing: 4) {
                                             Text("目标净值日: \(record.targetConfirmDate ?? "--")")
@@ -148,10 +148,10 @@ struct EditHoldingView: View {
                                                 .font(.system(size: 12, weight: .medium).monospacedDigit())
                                             Text("卖出")
                                                 .font(.system(size: 8))
-                                                .foregroundStyle(.red)
+                                                .foregroundStyle(Color.fundUp)
                                                 .padding(.horizontal, 3)
                                                 .padding(.vertical, 1)
-                                                .background(.red.opacity(0.14), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                                .background(Color.fundUp.opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                         }
                                         HStack(spacing: 4) {
                                             Text("卖出价 \(String(format: "%.4f", record.costPrice))")
@@ -161,7 +161,7 @@ struct EditHoldingView: View {
                                                 let sign = profit >= 0 ? "+" : ""
                                                 Text("已实现 \(sign)\(String(format: "%.2f", profit))")
                                                     .font(.system(size: 10).monospacedDigit())
-                                                    .foregroundStyle(profit >= 0 ? .red : .green)
+                                                    .foregroundStyle(Color.fundTrend(profit))
                                             }
                                             if let fee = record.fee, fee > 0 {
                                                 Text("费 \(String(format: "%.2f", fee))")
@@ -181,10 +181,10 @@ struct EditHoldingView: View {
                                             if record.isDCA {
                                                 Text("定投")
                                                     .font(.system(size: 8))
-                                                    .foregroundStyle(.blue)
+                                                    .foregroundStyle(Color.fundDCA)
                                                     .padding(.horizontal, 3)
                                                     .padding(.vertical, 1)
-                                                    .background(.blue.opacity(0.16), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                                    .background(Color.fundDCA.opacity(0.16), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                                             }
                                         }
                                         HStack(spacing: 4) {
@@ -214,7 +214,7 @@ struct EditHoldingView: View {
                                         }
                                         confirmCostText = nav > 0 ? String(format: "%.4f", nav) : ""
                                     }
-                                    .buttonStyle(.bordered)
+                                    .fundGlassButtonStyle()
                                     .controlSize(.mini)
                                 }
 
@@ -223,7 +223,7 @@ struct EditHoldingView: View {
                                 } label: {
                                     Image(systemName: "trash")
                                         .font(.system(size: 10))
-                                        .foregroundStyle(.red)
+                                        .foregroundStyle(.secondary)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -236,7 +236,7 @@ struct EditHoldingView: View {
                         }
                     }
                 }
-                .fundPanelSurface(cornerRadius: 12)
+                .fundPanelSurface(cornerRadius: FundBarDesign.compactPanelRadius)
 
                 // 汇总
                 if let wf = watchedFund {
@@ -248,7 +248,7 @@ struct EditHoldingView: View {
                             let sign = wf.realizedProfit >= 0 ? "+" : ""
                             Text("已实现 \(sign)\(String(format: "%.2f", wf.realizedProfit))")
                                 .font(.system(size: 11).monospacedDigit())
-                                .foregroundStyle(wf.realizedProfit >= 0 ? .red : .green)
+                                .foregroundStyle(Color.fundTrend(wf.realizedProfit))
                         }
                         Text("均价 \(String(format: "%.4f", wf.costPrice))")
                             .font(.system(size: 11).monospacedDigit())
@@ -352,7 +352,7 @@ struct EditHoldingView: View {
                         Text("清空全部")
                             .font(.system(size: 12))
                     }
-                    .buttonStyle(.bordered)
+                    .fundGlassButtonStyle()
                     .controlSize(.small)
                 }
 
@@ -392,7 +392,7 @@ struct EditHoldingView: View {
                     Text(inputMode == 2 ? "添加卖出" : "添加")
                         .font(.system(size: 12, weight: .medium))
                 }
-                .buttonStyle(.borderedProminent)
+                .fundGlassButtonStyle(prominent: true)
                 .controlSize(.small)
                 .disabled(isAddButtonDisabled)
             }
@@ -456,7 +456,7 @@ struct EditHoldingView: View {
                     } label: {
                         Text("取消定投")
                             .font(.system(size: 10))
-                            .foregroundStyle(.red)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -502,7 +502,7 @@ struct EditHoldingView: View {
                     .font(.system(size: 12, weight: .medium))
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.bordered)
+            .fundGlassButtonStyle()
             .controlSize(.small)
             .disabled(dcaAmount.isEmpty || (Double(dcaAmount) ?? 0) <= 0)
         }
@@ -531,7 +531,7 @@ struct EditHoldingView: View {
                 statItem(title: "总投入", value: String(format: "%.0f元", wf.dcaTotalInvested))
                 statItem(title: "均价", value: String(format: "%.4f", wf.dcaAverageCost))
                 statItem(title: "收益率", value: "\(profitSign)\(String(format: "%.2f", profitPct))%",
-                        color: profitPct >= 0 ? .red : .green)
+                        color: Color.fundTrend(profitPct))
             }
         }
     }
@@ -556,7 +556,7 @@ private struct EditHoldingSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         if enabled {
             content
-                .fundPanelSurface(cornerRadius: 18, tint: .orange.opacity(0.05), interactive: true)
+                .fundPanelSurface(cornerRadius: FundBarDesign.panelRadius, interactive: true)
         } else {
             content
         }

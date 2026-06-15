@@ -56,7 +56,7 @@ struct HoldingPieView: View {
             }
         }
         .padding(12)
-        .fundRowSurface(isHovered: false, cornerRadius: 12)
+        .fundRowSurface(isHovered: false, cornerRadius: FundBarDesign.compactPanelRadius)
     }
 
     private var pieChart: some View {
@@ -86,7 +86,7 @@ struct HoldingPieView: View {
             }
         }
         .frame(width: 90, height: 90)
-        .background(Color.primary.opacity(0.026), in: Circle())
+        .background(Color.primary.opacity(0.024), in: Circle())
     }
 
     private var totalValueText: String {
