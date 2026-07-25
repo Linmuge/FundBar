@@ -55,6 +55,12 @@ final class FundViewModel: ObservableObject {
         }
     }
 
+    /// 待编辑的基金（用于打开"编辑持仓"独立窗口时的跨视图传值）。
+    /// 不持久化：仅作为 openWindow(id: "edit-holding") 的参数载体。
+    @Published var pendingEditFund: Fund?
+    /// 待编辑基金的交易输入模式：0 = 按份额买入 / 1 = 按金额买入 / 2 = 卖出
+    @Published var pendingEditInputMode: Int = 0
+
     // MARK: - Private Properties
 
     private let service = FundService.shared
@@ -391,7 +397,8 @@ final class FundViewModel: ObservableObject {
     // MARK: - Lifecycle
 
     init() {
-        // 恢复数据源选择（直接赋值避免触发 didSet）
+
+        // 恢复数据源选择（直接赋值避免触发 didSet 写入）
         if let savedSource = UserDefaults.standard.string(forKey: dataSourceKey),
            let source = DataSource(rawValue: savedSource) {
             _currentDataSource = Published(initialValue: source)
@@ -704,6 +711,14 @@ final class FundViewModel: ObservableObject {
 
         var result = await service.fetchMultipleEstimates(codes: codes)
 
+        // 接口全部失败兜底：本地有自选基金却一条数据都没拉到，提示网络/接口问题，
+        // 而不是静默把列表清空，避免用户误以为"基金都没了"
+        if result.isEmpty && !codes.isEmpty {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                errorMessage = "基金数据获取失败，请稍后重试或检查网络连接"
+            }
+        }
+
         // 用持久化名称覆盖数据源返回的无效名称，并更新存储名称
         for i in 0..<result.count {
             let code = result[i].fundcode
@@ -726,6 +741,13 @@ final class FundViewModel: ObservableObject {
             }
         }
         // needsSave 时 watchedFunds 的 didSet 已自动触发写入
+
+        // 交易日：公共实时估值接口失效，用本地重仓股 + 个股行情自行估算
+        // 盘外时段(午休/盘前)基于最近收盘价估算仍有参考价值；
+        // 已确认净值的基金由 EstimateService 内部跳过(权威数据优先)
+        if isTradingDay && !result.isEmpty {
+            result = await EstimateService.shared.applyEstimates(to: result)
+        }
 
         withAnimation(.easeInOut(duration: 0.3)) {
             self.funds = result

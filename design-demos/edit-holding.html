@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FundBar 编辑持仓窗口 · 重设计原型</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  :root {
+    --up: #ff5a4d;
+    --down: #34c759;
+    --dca: #e8590c;
+    --accent: #0a84ff;
+    --buy: #0a84ff;
+    --text: rgba(255,255,255,0.92);
+    --text-2: rgba(255,255,255,0.55);
+    --text-3: rgba(255,255,255,0.32);
+    --stroke: rgba(255,255,255,0.10);
+    --stroke-2: rgba(255,255,255,0.06);
+    --panel: rgba(255,255,255,0.035);
+    --panel-2: rgba(255,255,255,0.025);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1100px 700px at 15% 15%, #2a3a5a 0%, transparent 55%),
+      radial-gradient(800px 600px at 90% 85%, #3d2a4a 0%, transparent 50%),
+      linear-gradient(160deg, #1a1d28 0%, #0f1117 100%);
+    min-height: 100vh;
+    padding: 48px 40px 60px;
+    display: flex; gap: 48px; align-items: flex-start;
+  }
+
+  /* ===== 窗口外壳 ===== */
+  .window {
+    width: 440px;
+    border-radius: 13px;
+    overflow: hidden;
+    background: rgba(28,30,40,0.72);
+    backdrop-filter: blur(40px) saturate(180%);
+    -webkit-backdrop-filter: blur(40px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow:
+      0 32px 80px rgba(0,0,0,0.6),
+      0 14px 32px rgba(0,0,0,0.4),
+      inset 0 0.5px 0 rgba(255,255,255,0.10);
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 14px;
+    border-bottom: 1px solid var(--stroke-2);
+    position: relative;
+  }
+  .lights { display: flex; gap: 7px; }
+  .lights span { width: 12px; height: 12px; border-radius: 50%; }
+  .lights .r { background: #ff5f57; }
+  .lights .y { background: #febc2e; }
+  .lights .g { background: #28c840; }
+  .titlebar .title {
+    position: absolute; left: 0; right: 0; text-align: center;
+    font-size: 12.5px; font-weight: 600; color: var(--text-2);
+    pointer-events: none;
+  }
+
+  .body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* ===== Hero 基金卡 ===== */
+  .hero-card {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, rgba(255,90,77,0.08), rgba(255,90,77,0.02));
+    border: 1px solid rgba(255,90,77,0.18);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .hero-top { display: flex; align-items: flex-start; gap: 10px; }
+  .hero-name-wrap { flex: 1; min-width: 0; }
+  .hero-name {
+    font-size: 15px; font-weight: 600; color: var(--text);
+    line-height: 1.3;
+  }
+  .hero-meta {
+    display: flex; align-items: center; gap: 6px; margin-top: 3px;
+    font-size: 10.5px; color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-meta .code { font-variant-numeric: tabular-nums; }
+  .badge {
+    font-size: 9px; font-weight: 500;
+    padding: 1px 5px; border-radius: 4px;
+    line-height: 1.5;
+  }
+  .badge.mix { color: #b98cff; background: rgba(185,140,255,0.16); }
+  .chg-pill {
+    font-size: 12px; font-weight: 700;
+    color: var(--up); background: rgba(255,90,77,0.15);
+    padding: 3px 9px; border-radius: 7px;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+
+  .hero-stats {
+    display: flex; gap: 0;
+    padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .stat { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .stat .k { font-size: 9.5px; color: var(--text-3); }
+  .stat .v {
+    font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+  .stat .v.up { color: var(--up); }
+  .stat .v.down { color: var(--down); }
+  .stat-sep { width: 1px; background: rgba(255,255,255,0.06); margin: 0 12px; }
+
+  /* ===== 区块标题 ===== */
+  .section-h {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10.5px; font-weight: 600; color: var(--text-2);
+    letter-spacing: 0.04em; text-transform: uppercase;
+  }
+  .section-h .count {
+    font-size: 10px; color: var(--text-3); font-weight: 500;
+    text-transform: none; letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ===== 持仓记录（时间线） ===== */
+  .records {
+    background: var(--panel-2);
+    border: 1px solid var(--stroke-2);
+    border-radius: 11px;
+    overflow: hidden;
+  }
+  .record {
+    display: flex; align-items: center; gap: 11px;
+    padding: 9px 12px;
+    position: relative;
+  }
+  .record + .record { border-top: 1px solid var(--stroke-2); }
+  .record:hover { background: rgba(255,255,255,0.02); }
+
+  .chip {
+    width: 26px; height: 26px; border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  .chip.buy { background: linear-gradient(135deg, #2a8eff, #0a84ff); }
+  .chip.dca { background: linear-gradient(135deg, #ff7a2d, #e8590c); }
+  .chip.sell { background: linear-gradient(135deg, #ff7a6d, #ff5a4d); }
+  .chip.pending {
+    background: rgba(232,89,12,0.15);
+    color: var(--dca);
+    border: 1px dashed rgba(232,89,12,0.5);
+    box-shadow: none;
+  }
+
+  .r-content { flex: 1; min-width: 0; }
+  .r-main {
+    font-size: 12px; font-weight: 600; color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.3;
+  }
+  .r-main .label-inline {
+    font-size: 9px; font-weight: 600;
+    padding: 1px 4px; border-radius: 3px;
+    margin-left: 5px; vertical-align: middle;
+  }
+  .r-main .label-dca { color: var(--dca); background: rgba(232,89,12,0.16); }
+  .r-main .label-pending { color: var(--dca); background: rgba(232,89,12,0.16); }
+  .r-main .label-sell { color: var(--up); background: rgba(255,90,77,0.14); }
+  .r-sub {
+    font-size: 10px; color: var(--text-3); margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+    display: flex; gap: 8px;
+  }
+  .r-sub span { display: inline-flex; align-items: center; gap: 3px; }
+  .r-sub .dot { width: 2px; height: 2px; border-radius: 50%; background: var(--text-3); align-self: center; }
+
+  .r-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .r-pl {
+    font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .r-pl.up { color: var(--up); }
+  .r-pl.down { color: var(--down); }
+  .r-action {
+    font-size: 9.5px; color: var(--accent); cursor: pointer;
+    padding: 2px 6px; border-radius: 4px;
+  }
+  .r-action:hover { background: rgba(10,132,255,0.12); }
+  .r-trash {
+    color: var(--text-3); cursor: pointer; padding: 3px;
+    opacity: 0.6;
+  }
+  .r-trash:hover { opacity: 1; color: var(--up); }
+  .r-trash svg { width: 12px; height: 12px; }
+
+  /* 待确认记录的特殊样式 */
+  .record.pending-row { background: rgba(232,89,12,0.04); }
+  .record.pending-row .r-action {
+    background: rgba(232,89,12,0.16);
+    color: var(--dca);
+  }
+
+  /* ===== 操作区（新增交易） ===== */
+  .action-box {
+    background: var(--panel);
+    border: 1px solid var(--stroke-2);
+    border-radius: 13px;
+    padding: 13px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .seg {
+    display: flex; gap: 3px;
+    background: rgba(0,0,0,0.25);
+    padding: 3px; border-radius: 9px;
+    border: 1px solid var(--stroke-2);
+  }
+  .seg .s {
+    flex: 1; text-align: center; padding: 6px 0;
+    font-size: 11.5px; font-weight: 500; color: var(--text-2);
+    border-radius: 6px; cursor: pointer;
+    transition: all .15s;
+  }
+  .seg .s.on {
+    background: rgba(255,255,255,0.12); color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .input-row { display: flex; gap: 8px; }
+  .field { flex: 1; position: relative; }
+  .field label {
+    position: absolute; top: -7px; left: 10px;
+    font-size: 9px; color: var(--text-3);
+    background: rgba(28,30,40,0.9); padding: 0 4px;
+    z-index: 1; font-weight: 500;
+  }
+  .field input {
+    width: 100%;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--stroke);
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+  }
+  .field input:focus {
+    border-color: var(--accent);
+    background: rgba(10,132,255,0.08);
+    box-shadow: 0 0 0 3px rgba(10,132,255,0.12);
+  }
+  .field input::placeholder { color: var(--text-3); }
+
+  .action-footer {
+    display: flex; align-items: center; gap: 8px; margin-top: 2px;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-3);
+    border: none;
+    padding: 6px 10px; border-radius: 7px;
+    font-size: 11px; cursor: pointer;
+  }
+  .btn-ghost:hover { color: var(--up); background: rgba(255,90,77,0.08); }
+  .btn-primary {
+    background: linear-gradient(135deg, #2a8eff, #0a84ff);
+    color: #fff;
+    border: none;
+    padding: 8px 20px;
+    border-radius: 8px;
+    font-size: 12.5px; font-weight: 600;
+    cursor: pointer;
+    margin-left: auto;
+    box-shadow: 0 2px 8px rgba(10,132,255,0.3);
+  }
+  .btn-primary:hover { filter: brightness(1.1); }
+
+  /* ===== 定投计划（折叠摘要） ===== */
+  .dca-summary {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px;
+    background: rgba(232,89,12,0.06);
+    border: 1px solid rgba(232,89,12,0.15);
+    border-radius: 11px;
+    cursor: pointer;
+  }
+  .dca-summary:hover { background: rgba(232,89,12,0.09); }
+  .dca-icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(135deg, #ff7a2d, #e8590c);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(232,89,12,0.3);
+    flex-shrink: 0;
+  }
+  .dca-icon svg { width: 14px; height: 14px; }
+  .dca-text { flex: 1; }
+  .dca-text .t { font-size: 12px; font-weight: 600; color: var(--text); }
+  .dca-text .s {
+    font-size: 10.5px; color: var(--text-2); margin-top: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+  .dca-text .s .on { color: #30d158; }
+  .dca-chev { color: var(--text-3); }
+  .dca-chev svg { width: 12px; height: 12px; }
+
+  /* ===== 定投统计（仅在已有定投时显示） ===== */
+  .dca-stats {
+    display: flex; gap: 0;
+    padding: 11px 14px;
+    background: var(--panel-2);
+    border: 1px solid var(--stroke-2);
+    border-radius: 11px;
+  }
+  .ds-item { flex: 1; text-align: center; }
+  .ds-item .k { font-size: 9px; color: var(--text-3); }
+  .ds-item .v {
+    font-size: 12px; font-weight: 600; margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+  .ds-item .v.up { color: var(--up); }
+  .ds-item .v.down { color: var(--down); }
+  .ds-sep { width: 1px; background: var(--stroke-2); margin: 0 8px; }
+
+  /* ===== 右侧说明卡 ===== */
+  .notes {
+    width: 320px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 14px;
+    padding-top: 60px;
+  }
+  .note-card {
+    padding: 16px 18px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--stroke-2);
+    border-radius: 12px;
+  }
+  .note-card h3 {
+    font-size: 11.5px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    margin-bottom: 9px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .note-card h3 .num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(10,132,255,0.18); color: var(--accent);
+    font-size: 10px;
+  }
+  .note-card p {
+    font-size: 11.5px; line-height: 1.6; color: var(--text-2);
+  }
+  .note-card p + p { margin-top: 7px; }
+  .note-card .kw { color: var(--text); font-weight: 600; }
+  .note-card .fix { color: #30d158; font-weight: 600; }
+  .caption {
+    font-size: 10px; color: var(--text-3); line-height: 1.5; margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ========== 编辑持仓窗口 ========== -->
+<div class="window">
+  <div class="titlebar">
+    <div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+    <div class="title">编辑持仓</div>
+  </div>
+
+  <div class="body">
+
+    <!-- ===== Hero 基金卡 ===== -->
+    <div class="hero-card">
+      <div class="hero-top">
+        <div class="hero-name-wrap">
+          <div class="hero-name">易方达蓝筹精选混合</div>
+          <div class="hero-meta">
+            <span class="code">005827</span>
+            <span class="badge mix">混合</span>
+            <span>· 净值 2.0023</span>
+          </div>
+        </div>
+        <span class="chg-pill">+1.24%</span>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><span class="k">持仓份额</span><span class="v">1,200</span></div>
+        <div class="stat-sep"></div>
+        <div class="stat"><span class="k">持仓市值</span><span class="v">¥2,402.76</span></div>
+        <div class="stat-sep"></div>
+        <div class="stat"><span class="k">浮动盈亏</span><span class="v up">+345.20</span></div>
+        <div class="stat-sep"></div>
+        <div class="stat"><span class="k">均价</span><span class="v">1.7150</span></div>
+      </div>
+    </div>
+
+    <!-- ===== 持仓记录 ===== -->
+    <div class="section-h">
+      <span>持仓记录</span>
+      <span class="count">3 笔 · 已实现 +88.00</span>
+    </div>
+    <div class="records">
+
+      <!-- 待确认记录 -->
+      <div class="record pending-row">
+        <div class="chip pending">·</div>
+        <div class="r-content">
+          <div class="r-main">¥1,000.00<span class="label-inline label-pending">待确认</span></div>
+          <div class="r-sub">
+            <span>目标净值日 05/20</span><span class="dot"></span>
+            <span>手续费 ¥1.50</span>
+          </div>
+        </div>
+        <div class="r-action">确认份额</div>
+      </div>
+
+      <!-- 买入记录 -->
+      <div class="record">
+        <div class="chip buy">+</div>
+        <div class="r-content">
+          <div class="r-main">买入 500.00 份</div>
+          <div class="r-sub">
+            <span>成本 1.9834</span><span class="dot"></span>
+            <span>03/15</span>
+          </div>
+        </div>
+        <div class="r-trash">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        </div>
+      </div>
+
+      <!-- 定投记录 -->
+      <div class="record">
+        <div class="chip dca">+</div>
+        <div class="r-content">
+          <div class="r-main">买入 400.00 份<span class="label-inline label-dca">定投</span></div>
+          <div class="r-sub">
+            <span>成本 2.0120</span><span class="dot"></span>
+            <span>04/15</span>
+          </div>
+        </div>
+        <div class="r-trash">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+        </div>
+      </div>
+
+      <!-- 卖出记录 -->
+      <div class="record">
+        <div class="chip sell">−</div>
+        <div class="r-content">
+          <div class="r-main">卖出 200.00 份<span class="label-inline label-sell">卖出</span></div>
+          <div class="r-sub">
+            <span>卖出价 2.1500</span><span class="dot"></span>
+            <span>04/20</span>
+          </div>
+        </div>
+        <div class="r-right">
+          <span class="r-pl up">+33.20</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ===== 新增交易操作区 ===== -->
+    <div class="action-box">
+      <div class="seg">
+        <div class="s on">份额买入</div>
+        <div class="s">金额买入</div>
+        <div class="s">卖出</div>
+      </div>
+      <div class="input-row">
+        <div class="field">
+          <label>份额</label>
+          <input type="text" value="200" placeholder="0.00">
+        </div>
+        <div class="field">
+          <label>成本净值</label>
+          <input type="text" value="2.0234" placeholder="0.0000">
+        </div>
+      </div>
+      <div class="action-footer">
+        <button class="btn-ghost">清空全部</button>
+        <button class="btn-primary">添加记录</button>
+      </div>
+    </div>
+
+    <!-- ===== 定投计划（折叠摘要） ===== -->
+    <div class="dca-summary">
+      <div class="dca-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 2v20M2 7l10-5 10 5"/>
+        </svg>
+      </div>
+      <div class="dca-text">
+        <div class="t">定投计划</div>
+        <div class="s"><span class="on">● 已开启</span> · 每月 500 元 · 已投 4 期</div>
+      </div>
+      <div class="dca-chev">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+      </div>
+    </div>
+
+    <!-- ===== 定投统计 ===== -->
+    <div class="dca-stats">
+      <div class="ds-item"><div class="k">定投次数</div><div class="v">4 次</div></div>
+      <div class="ds-sep"></div>
+      <div class="ds-item"><div class="k">总投入</div><div class="v">¥2,000</div></div>
+      <div class="ds-sep"></div>
+      <div class="ds-item"><div class="k">均价</div><div class="v">1.9834</div></div>
+      <div class="ds-sep"></div>
+      <div class="ds-item"><div class="k">收益率</div><div class="v up">+2.05%</div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ========== 设计说明 ========== -->
+<div class="notes">
+
+  <div class="note-card">
+    <h3><span class="num">1</span>Hero 基金状态卡</h3>
+    <p>原版两行做一件事（标题行 + 小字基金信息行）。现在合成<span class="kw">一个有视觉重量的卡片</span>：基金名 + 代码 + 类型 + 当前涨跌胶囊 + 四联关键指标（份额/市值/盈亏/均价）。</p>
+    <p>涨跌色随基金当日情况变化，让用户<span class="kw">一眼看到这只基金现在的状态</span>，而不是先读一堆交易记录。</p>
+  </div>
+
+  <div class="note-card">
+    <h3><span class="num">2</span>持仓记录：时间线 + 彩色 chip</h3>
+    <p>原版是纯文字列表，扫读困难。现在每条记录左侧有<span class="kw">彩色 chip</span>：</p>
+    <p><span style="color:var(--buy)">■</span> 蓝色 +（买入）· <span style="color:var(--dca)">■</span> 橙色 +（定投）· <span style="color:var(--up)">■</span> 红色 −（卖出）· <span style="color:var(--dca)">┄</span> 橙色虚框（待确认）</p>
+    <p>主信息加粗（份额/金额），副信息降级（成本/日期）。<span class="kw">卖出记录右侧显示已实现盈亏</span>，待确认记录右侧是「确认份额」操作按钮。</p>
+  </div>
+
+  <div class="note-card">
+    <h3><span class="num">3</span>操作区独立成盒</h3>
+    <p>原版「添加交易记录」标题 + 分段 + 输入 + 按钮四层平铺。现在<span class="kw">收进一个圆角容器</span>，分段控件、输入框（带浮动 label）、操作按钮成一组，和上面的展示区视觉分离。</p>
+    <p>输入框聚焦时有<span class="kw">蓝色光晕</span>，明确告诉用户当前在填哪个字段。</p>
+  </div>
+
+  <div class="note-card">
+    <h3><span class="num">4</span>定投计划折叠 + 统计独立</h3>
+    <p>原版定投计划是展开的表单（频率选择 + 金额输入 + 按钮），常驻占空间。现在<span class="kw">折叠成一行摘要</span>（图标 + 已开启 · 每月 500 元 · 已投 4 期），点击才展开设置。</p>
+    <p>定投统计<span class="kw">从定投计划区剥离</span>，独立成四联指标条，和 Hero 的四联指标呼应。</p>
+  </div>
+
+  <div class="caption">
+    保留的品牌签名：液态玻璃窗口 · 红涨(<code>#ff5a4d</code>)绿跌(<code>#34c759</code>)语义色 · 等宽数字 · 橙色定投(<code>#e8590c</code>)。窗口宽度 440pt，与下拉框同语言但更宽敞。
+  </div>
+</div>
+
+</body>
+</html>

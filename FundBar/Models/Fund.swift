@@ -30,11 +30,13 @@ struct Fund: Identifiable, Codable, Equatable {
     let gszzl: String      // 估算涨跌幅 (%)
     let gztime: String     // 估算时间
     let jzrq: String       // 净值日期 (yyyy-MM-dd)
+    var isEstimatedLocally: Bool  // gsz/gszzl 是否由本地重仓股估算（区别于官方 API 估值）
 
     var id: String { fundcode }
 
     // jzrq 可能缺失（部分数据源），提供默认值
-    init(fundcode: String, name: String, dwjz: String, gsz: String, gszzl: String, gztime: String, jzrq: String = "") {
+    // isEstimatedLocally 默认 false，保持现有调用点兼容
+    init(fundcode: String, name: String, dwjz: String, gsz: String, gszzl: String, gztime: String, jzrq: String = "", isEstimatedLocally: Bool = false) {
         self.fundcode = fundcode
         self.name = name
         self.dwjz = dwjz
@@ -42,10 +44,12 @@ struct Fund: Identifiable, Codable, Equatable {
         self.gszzl = gszzl
         self.gztime = gztime
         self.jzrq = jzrq
+        self.isEstimatedLocally = isEstimatedLocally
     }
 
     enum CodingKeys: String, CodingKey {
         case fundcode, name, dwjz, gsz, gszzl, gztime, jzrq
+        case isEstimatedLocally
     }
 
     init(from decoder: Decoder) throws {
@@ -53,10 +57,57 @@ struct Fund: Identifiable, Codable, Equatable {
         fundcode = try container.decode(String.self, forKey: .fundcode)
         name = try container.decode(String.self, forKey: .name)
         dwjz = try container.decode(String.self, forKey: .dwjz)
-        gsz = try container.decode(String.self, forKey: .gsz)
-        gszzl = try container.decode(String.self, forKey: .gszzl)
-        gztime = try container.decode(String.self, forKey: .gztime)
+        // gsz / gszzl 在部分数据源（如 FundMNFInfo 盘外时段）可能为 null，
+        // 用 decodeIfPresent 容错，避免整个 Fund 解码失败导致基金从列表消失
+        gsz = try container.decodeIfPresent(String.self, forKey: .gsz) ?? ""
+        gszzl = try container.decodeIfPresent(String.self, forKey: .gszzl) ?? ""
+        gztime = try container.decodeIfPresent(String.self, forKey: .gztime) ?? ""
         jzrq = try container.decodeIfPresent(String.self, forKey: .jzrq) ?? ""
+        isEstimatedLocally = try container.decodeIfPresent(Bool.self, forKey: .isEstimatedLocally) ?? false
+    }
+
+    // 编码时也带上标记，保证往返一致
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(fundcode, forKey: .fundcode)
+        try container.encode(name, forKey: .name)
+        try container.encode(dwjz, forKey: .dwjz)
+        try container.encode(gsz, forKey: .gsz)
+        try container.encode(gszzl, forKey: .gszzl)
+        try container.encode(gztime, forKey: .gztime)
+        try container.encode(jzrq, forKey: .jzrq)
+        try container.encode(isEstimatedLocally, forKey: .isEstimatedLocally)
+    }
+
+    /// 从东方财富移动端 FundMNFInfo 响应项构造 Fund
+    /// 盘外时段 gsz/gszzl 为 null 时，用 nav/navchgrt 兜底，保证涨跌幅显示真实数据
+    /// - Parameter expansion: FundMNFInfo 的 Expansion 字段，包含"今日估值日期"(GZTIME)，
+    ///   用于正确判断 isNavUpdatedToday（不能简单用 pdate 充当 gztime，否则会误判为"净值已确认"）
+    init(fromMNFInfo item: FundMNFInfoItem, expansion: FundMNFInfoExpansion? = nil) {
+        let nav = item.nav ?? ""
+        let navchgrt = item.navchgrt ?? ""
+        let rawGsz = item.gsz ?? ""
+        let rawGszzl = item.gszzl ?? ""
+
+        fundcode = item.fcode ?? ""
+        name = item.shortname ?? ""
+        dwjz = nav
+        // 估算值缺失（盘外）→ 回退到确认净值，避免 bestNav/marketValue 计算出 0
+        gsz = rawGsz.isEmpty ? nav : rawGsz
+        // 估算涨跌幅缺失（盘外）→ 回退到净值涨跌幅，保证 changePercent 显示真实数据
+        gszzl = rawGszzl.isEmpty ? navchgrt : rawGszzl
+        // gztime 优先级：Datas 内 GZTIME > Expansion.GZTIME > PDATE
+        // 关键：盘外 Datas.GZTIME 为 null 时，必须用 Expansion.GZTIME（今天），
+        // 不能用 PDATE（昨天），否则 isNavUpdatedToday 会误判为 true，导致估算被跳过
+        if let innerGztime = item.gztime, !innerGztime.isEmpty {
+            gztime = innerGztime
+        } else if let expansionGztime = expansion?.gztime, !expansionGztime.isEmpty {
+            gztime = expansionGztime
+        } else {
+            gztime = item.pdate ?? ""
+        }
+        jzrq = item.pdate ?? ""
+        isEstimatedLocally = false
     }
 
     /// 最佳可用净值：当日净值已更新则用实际净值，否则用估算净值

@@ -76,10 +76,16 @@ struct MainWindowView: View {
     /// 标题栏：贴顶横条（非浮动圆角面板），交通灯居左、标题居中、工具居右
     private var header: some View {
         HStack(spacing: 8) {
-            // 左侧预留给交通灯（由 FundWindowConfigurator 定位）
-            Color.clear
-                .frame(width: 100, height: 1)
-                .accessibilityHidden(true)
+            HStack(spacing: 5) {
+                Text("FundBar")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("· 自选基金")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(width: 250, alignment: .leading)
+            .padding(.leading, 118)
+            .allowsHitTesting(false)
 
             Spacer(minLength: 0)
 
@@ -116,17 +122,6 @@ struct MainWindowView: View {
         .padding(.horizontal, 16)
         .overlay(alignment: .bottom) {
             Divider()
-        }
-        // 居中标题：绝对居中，不受左右控件挤压
-        .overlay {
-            HStack(spacing: 5) {
-                Text("FundBar")
-                    .font(.system(size: 13, weight: .semibold))
-                Text("· 自选基金")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.tertiary)
-            }
-            .allowsHitTesting(false)
         }
     }
 
@@ -170,25 +165,47 @@ struct MainWindowView: View {
     }
 
     private func editHoldingOverlay(code: String, name: String) -> some View {
-        ScrollView {
-            EditHoldingView(
-                viewModel: viewModel,
-                isPresented: $showEditHolding,
-                inputMode: $editHoldingInputMode,
-                fundCode: code,
-                fundName: name,
-                usesPanelSurface: false
-            )
+        ZStack(alignment: .trailing) {
+            // 轻微压暗主内容，明确当前焦点在编辑侧栏，同时保留主窗口上下文。
+            Color.black.opacity(0.06)
+                .contentShape(Rectangle())
+                .onTapGesture { closeEditHolding() }
+
+            ScrollView {
+                EditHoldingView(
+                    viewModel: viewModel,
+                    isPresented: $showEditHolding,
+                    inputMode: $editHoldingInputMode,
+                    fundCode: code,
+                    fundName: name,
+                    usesPanelSurface: false
+                )
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
+                .frame(maxWidth: .infinity, alignment: .top)
+            }
+            .scrollIndicators(.hidden)
+            .frame(width: 448)
+            .frame(maxHeight: .infinity)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(Color.primary.opacity(0.08))
+                    .frame(width: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.16), radius: 28, x: -8, y: 0)
+            .padding(.top, 14)
+            .padding(.trailing, 16)
+            .padding(.bottom, 14)
         }
-        .scrollIndicators(.visible)
-        .frame(width: 430)
-        .frame(maxHeight: .infinity)
-        .fundPanelSurface(cornerRadius: FundBarDesign.panelRadius, interactive: true)
-        .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
-        .padding(.top, 96)
-        .padding(.trailing, 20)
-        .padding(.bottom, 20)
         .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+
+    private func closeEditHolding() {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.22)) {
+            showEditHolding = false
+        }
     }
 
     /// Hero：今日预估收益作为视觉中心（"我今天是涨是跌"一眼作答）
@@ -885,6 +902,7 @@ private struct FundWindowConfigurator: NSViewRepresentable {
 
     private func configure(window: NSWindow?) {
         guard let window else { return }
+        window.title = ""
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)

@@ -18,6 +18,12 @@ struct FundBarApp: App {
         .defaultSize(width: 900, height: 640)
         .windowResizability(.contentMinSize)
 
+        Window("编辑持仓", id: "edit-holding") {
+            EditHoldingWindowView(viewModel: viewModel)
+        }
+        .defaultSize(width: 460, height: 680)
+        .windowResizability(.contentMinSize)
+
         MenuBarExtra {
             ContentView(viewModel: viewModel)
         } label: {

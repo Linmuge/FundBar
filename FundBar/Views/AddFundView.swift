@@ -277,6 +277,7 @@ struct AddFundView: View {
         // 纯6位代码不搜索
         if isPureCode {
             searchResults = []
+            isSearching = false
             return
         }
 

@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FundBar 状态栏重设计 · 高保真原型</title>
+<style>
+  /* ===== 基础 ===== */
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  :root {
+    --up: #ff5a4d;        /* 暗色红涨 */
+    --down: #34c759;      /* 暗色绿跌 */
+    --dca: #e8590c;       /* 定投橙 */
+    --accent: #0a84ff;    /* macOS 暗色 accent */
+    --text: rgba(255,255,255,0.92);
+    --text-2: rgba(255,255,255,0.55);
+    --text-3: rgba(255,255,255,0.32);
+    --stroke: rgba(255,255,255,0.10);
+    --stroke-2: rgba(255,255,255,0.06);
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(1200px 800px at 20% 10%, #2a3a5a 0%, transparent 55%),
+      radial-gradient(900px 700px at 85% 90%, #3d2a4a 0%, transparent 50%),
+      linear-gradient(160deg, #1a1d28 0%, #0f1117 100%);
+    min-height: 100vh;
+    padding: 56px 48px 64px;
+    overflow-x: auto;
+  }
+
+  /* macOS 顶部菜单栏（让 popover 有锚点感） */
+  .menubar {
+    position: fixed; top: 0; left: 0; right: 0; height: 28px;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 14px 0 18px;
+    font-size: 13px; font-weight: 500;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    z-index: 5;
+  }
+  .menubar .apple { font-size: 15px; }
+  .menubar .apps { display: flex; gap: 16px; opacity: 0.85; }
+  .menubar .right { margin-left: auto; display: flex; align-items: center; gap: 14px; opacity: 0.9; }
+  .menubar .fundbar-item {
+    display: flex; align-items: center; gap: 4px;
+    color: var(--up); font-variant-numeric: tabular-nums; font-weight: 600;
+  }
+  .menubar .fundbar-item svg { width: 13px; height: 13px; }
+
+  /* ===== 画布布局 ===== */
+  .stage {
+    display: grid;
+    grid-template-columns: 396px 56px 420px;
+    gap: 0;
+    align-items: start;
+    margin-top: 40px;
+    max-width: 920px;
+  }
+  .label-top {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--text-3); margin-bottom: 10px; padding-left: 4px;
+  }
+
+  /* ===== 通用玻璃面板 ===== */
+  .glass {
+    background: rgba(40,44,56,0.55);
+    backdrop-filter: blur(30px) saturate(180%);
+    -webkit-backdrop-filter: blur(30px) saturate(180%);
+    border: 1px solid var(--stroke);
+    box-shadow:
+      0 24px 60px rgba(0,0,0,0.5),
+      0 8px 20px rgba(0,0,0,0.35),
+      inset 0 0.5px 0 rgba(255,255,255,0.12);
+  }
+
+  /* ============================================================
+     下拉框（Popover）—— 396pt 宽，固定骨架
+     ============================================================ */
+  .popover {
+    width: 396px;
+    border-radius: 22px;
+    overflow: hidden;
+    position: relative;
+  }
+  .popover::before {
+    /* 顶部小三角指向状态栏 */
+    content: ""; position: absolute; top: -7px; right: 28px;
+    width: 14px; height: 14px;
+    background: rgba(40,44,56,0.55);
+    border-left: 1px solid var(--stroke);
+    border-top: 1px solid var(--stroke);
+    transform: rotate(45deg);
+    backdrop-filter: blur(30px);
+  }
+
+  /* —— Header（slim, 固定高度）—— */
+  .pop-header {
+    display: flex; align-items: center; gap: 8px;
+    height: 40px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--stroke-2);
+  }
+  .pop-title {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .pop-title .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #30d158; box-shadow: 0 0 6px rgba(48,209,88,0.6);
+  }
+  .pop-title .status { font-size: 10.5px; font-weight: 500; color: var(--text-2); }
+  .pop-header .spacer { flex: 1; }
+  .icon-btn {
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .icon-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); }
+  .icon-btn.active { background: rgba(10,132,255,0.18); color: var(--accent); }
+  .icon-btn svg { width: 13px; height: 13px; stroke-width: 2.2; }
+
+  /* —— Hero（固定高度，今日预估）—— */
+  .hero {
+    padding: 13px 14px 14px;
+    border-bottom: 1px solid var(--stroke-2);
+    background: linear-gradient(180deg, rgba(255,90,77,0.05), transparent);
+  }
+  .hero-row1 {
+    display: flex; align-items: baseline; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .hero-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--text-3);
+  }
+  .hero-avg {
+    font-size: 11px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--up);
+  }
+  .hero-number {
+    display: flex; align-items: baseline; gap: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .hero-number .sign { font-size: 17px; font-weight: 500; color: rgba(255,90,77,0.8); }
+  .hero-number .val { font-size: 27px; font-weight: 600; color: var(--up); letter-spacing: -0.01em; }
+  .hero-number .unit { font-size: 13px; font-weight: 500; color: rgba(255,90,77,0.55); margin-left: 2px; }
+  .hero-strip {
+    display: flex; gap: 0; margin-top: 10px;
+    padding-top: 9px; border-top: 1px solid var(--stroke-2);
+  }
+  .hero-strip .cell { flex: 1; display: flex; flex-direction: column; gap: 1px; }
+  .hero-strip .cell .k { font-size: 9.5px; color: var(--text-3); }
+  .hero-strip .cell .v {
+    font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .hero-strip .v.up { color: var(--up); }
+  .hero-strip .v.muted { color: var(--text); }
+  .hero-strip .sep { width: 1px; background: var(--stroke-2); margin: 0 10px; }
+
+  /* —— 列表（flex 滚动区）—— */
+  .list-wrap {
+    padding: 8px;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .list-wrap::-webkit-scrollbar { width: 6px; }
+  .list-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+  .list-wrap::-webkit-scrollbar-track { background: transparent; }
+
+  .fund-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px;
+    border-radius: 11px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background .14s, border-color .14s;
+  }
+  .fund-row + .fund-row { margin-top: 3px; }
+  .fund-row:hover {
+    background: rgba(255,255,255,0.055);
+    border-color: var(--stroke-2);
+  }
+  .fund-row.highlight {
+    background: rgba(10,132,255,0.10);
+    border-color: rgba(10,132,255,0.25);
+  }
+
+  .fund-left { min-width: 0; flex: 1; }
+  .fund-name {
+    font-size: 13px; font-weight: 500; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    line-height: 1.3;
+  }
+  .fund-meta {
+    display: flex; align-items: center; gap: 5px; margin-top: 3px;
+  }
+  .fund-code {
+    font-size: 10.5px; color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .badge {
+    font-size: 9px; font-weight: 500;
+    padding: 1px 5px; border-radius: 5px;
+    line-height: 1.5;
+  }
+  .badge.mix { color: #b98cff; background: rgba(185,140,255,0.16); }
+  .badge.stock { color: #ff9d4d; background: rgba(255,157,77,0.16); }
+  .badge.index { color: #4dd6e0; background: rgba(77,214,224,0.16); }
+  .badge.bond { color: #6db4ff; background: rgba(109,180,255,0.16); }
+  .badge.hold { color: var(--text-2); background: rgba(255,255,255,0.08); font-variant-numeric: tabular-nums; }
+  .badge.dca { color: var(--dca); background: rgba(232,89,12,0.18); font-weight: 600; }
+
+  /* 中间 sparkline */
+  .spark { width: 46px; height: 22px; flex-shrink: 0; }
+
+  /* 右侧：涨跌幅为主，净值/盈亏降级 */
+  .fund-right {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+    min-width: 78px;
+  }
+  .chg {
+    font-size: 12.5px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding: 2px 7px; border-radius: 7px;
+    line-height: 1.3;
+  }
+  .chg.up { color: var(--up); background: rgba(255,90,77,0.13); }
+  .chg.down { color: var(--down); background: rgba(52,199,89,0.13); }
+  .nav-line {
+    font-size: 10px; color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+    display: flex; gap: 4px; align-items: baseline;
+  }
+  .nav-line .nav-label { font-size: 8.5px; }
+  .nav-line .est { color: var(--accent); font-size: 8.5px; font-weight: 600; }
+  .pnl {
+    font-size: 10px; font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .pnl.up { color: var(--up); }
+  .pnl.down { color: var(--down); }
+
+  /* —— Footer（固定）—— */
+  .pop-footer {
+    display: flex; align-items: center; gap: 8px;
+    height: 34px;
+    padding: 0 12px;
+    border-top: 1px solid var(--stroke-2);
+    font-size: 10px; color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .pop-footer .spacer { flex: 1; }
+  .pop-footer .fbtn {
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 7px; color: var(--text-2); cursor: pointer;
+  }
+  .pop-footer .fbtn:hover { background: rgba(255,255,255,0.07); color: var(--text); }
+  .pop-footer .fbtn svg { width: 11px; height: 11px; }
+
+  /* ============================================================
+     中间连接箭头
+     ============================================================ */
+  .arrow-col {
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 220px; gap: 6px;
+  }
+  .arrow-col .a-label {
+    font-size: 9.5px; font-weight: 600; color: var(--accent);
+    letter-spacing: 0.05em; text-transform: uppercase;
+    text-align: center; line-height: 1.4;
+  }
+  .arrow-col .a-sub {
+    font-size: 9px; color: var(--text-3); text-align: center; max-width: 52px;
+    line-height: 1.4;
+  }
+  .arrow-svg { width: 40px; height: 28px; }
+
+  /* ============================================================
+     独立编辑窗口（修 bug 的关键）
+     ============================================================ */
+  .edit-window {
+    width: 420px;
+    border-radius: 14px;
+    overflow: hidden;
+    background: rgba(30,32,42,0.78);
+    box-shadow:
+      0 30px 70px rgba(0,0,0,0.6),
+      0 12px 28px rgba(0,0,0,0.4),
+      inset 0 0.5px 0 rgba(255,255,255,0.10);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .ew-titlebar {
+    display: flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 14px;
+    border-bottom: 1px solid var(--stroke-2);
+  }
+  .ew-lights { display: flex; gap: 7px; }
+  .ew-lights span { width: 12px; height: 12px; border-radius: 50%; }
+  .ew-lights .r { background: #ff5f57; }
+  .ew-lights .y { background: #febc2e; }
+  .ew-lights .g { background: #28c840; }
+  .ew-title {
+    flex: 1; text-align: center;
+    font-size: 12.5px; font-weight: 600; color: var(--text-2);
+    margin-right: 58px; /* 平衡红绿灯宽度 */
+  }
+
+  .ew-body {
+    padding: 16px 18px 18px;
+    display: flex; flex-direction: column; gap: 13px;
+  }
+  .ew-fund-info {
+    display: flex; align-items: center; gap: 8px;
+    padding-bottom: 11px; border-bottom: 1px solid var(--stroke-2);
+  }
+  .ew-fund-info .name { font-size: 13.5px; font-weight: 600; }
+  .ew-fund-info .code { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .ew-fund-info .chg-sm {
+    margin-left: auto; font-size: 12px; font-weight: 600;
+    color: var(--up); background: rgba(255,90,77,0.13);
+    padding: 2px 8px; border-radius: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 已有记录 */
+  .records-h {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10.5px; font-weight: 600; color: var(--text-2);
+    letter-spacing: 0.03em;
+  }
+  .records-h .count { color: var(--text-3); font-weight: 500; }
+  .records {
+    display: flex; flex-direction: column;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid var(--stroke-2);
+    border-radius: 11px;
+    overflow: hidden;
+  }
+  .record {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 11px;
+  }
+  .record + .record { border-top: 1px solid var(--stroke-2); }
+  .record .chip {
+    width: 22px; height: 22px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #fff;
+    flex-shrink: 0;
+  }
+  .record .chip.buy { background: var(--accent); }
+  .record .chip.sell { background: var(--up); }
+  .record .chip.dca { background: var(--dca); }
+  .record .r-main { font-size: 11.5px; font-weight: 500; font-variant-numeric: tabular-nums; }
+  .record .r-sub { font-size: 9.5px; color: var(--text-3); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .record .r-pl { margin-left: auto; font-size: 10.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .record .trash { color: var(--text-3); cursor: pointer; padding: 2px; }
+  .record .trash svg { width: 11px; height: 11px; }
+
+  /* 汇总条 */
+  .summary-bar {
+    display: flex; gap: 0; font-size: 10.5px;
+    padding: 0 2px;
+  }
+  .summary-bar .item { display: flex; gap: 4px; align-items: baseline; }
+  .summary-bar .item .k { color: var(--text-3); }
+  .summary-bar .item .v { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .summary-bar .sep { width: 1px; background: var(--stroke-2); margin: 0 10px; }
+
+  /* 输入区 */
+  .seg {
+    display: flex; gap: 3px;
+    background: rgba(255,255,255,0.05);
+    padding: 3px; border-radius: 9px;
+    border: 1px solid var(--stroke-2);
+  }
+  .seg .s {
+    flex: 1; text-align: center; padding: 5px 0;
+    font-size: 11px; font-weight: 500; color: var(--text-2);
+    border-radius: 6px; cursor: pointer;
+  }
+  .seg .s.on { background: rgba(255,255,255,0.12); color: var(--text); }
+
+  .input-row { display: flex; gap: 8px; }
+  .field {
+    flex: 1; position: relative;
+  }
+  .field input {
+    width: 100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--stroke);
+    border-radius: 8px;
+    padding: 8px 10px 8px 10px;
+    color: var(--text);
+    font-size: 12.5px;
+    font-family: "SF Mono", ui-monospace, "SF Pro Text", monospace;
+    font-variant-numeric: tabular-nums;
+    outline: none;
+  }
+  .field input:focus {
+    border-color: var(--accent);
+    background: rgba(10,132,255,0.08);
+  }
+  .field input::placeholder { color: var(--text-3); }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 9px;
+    font-size: 12.5px; font-weight: 600;
+    cursor: pointer;
+    margin-left: auto;
+  }
+  .btn-primary:hover { background: #2490ff; }
+  .action-row { display: flex; align-items: center; gap: 8px; }
+  .btn-ghost {
+    background: rgba(255,255,255,0.06);
+    color: var(--text-2);
+    border: 1px solid var(--stroke-2);
+    padding: 7px 12px; border-radius: 8px;
+    font-size: 11.5px; cursor: pointer;
+  }
+
+  /* 定投计划 */
+  .dca-block {
+    padding-top: 11px; border-top: 1px solid var(--stroke-2);
+    display: flex; flex-direction: column; gap: 9px;
+  }
+  .dca-h {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 10.5px; font-weight: 600; color: var(--text-2);
+  }
+  .dca-on { font-size: 9.5px; color: #30d158; display: flex; align-items: center; gap: 4px; }
+  .dca-on .d { width: 6px; height: 6px; border-radius: 50%; background: #30d158; }
+  .dca-row { display: flex; gap: 8px; align-items: center; }
+
+  /* ===== 注释 ===== */
+  .annotation {
+    position: absolute;
+    font-size: 10px; font-weight: 600;
+    color: var(--accent);
+    background: rgba(10,132,255,0.12);
+    border: 1px solid rgba(10,132,255,0.3);
+    padding: 3px 8px; border-radius: 6px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .annotation::after {
+    content: ""; position: absolute;
+    width: 1px; background: rgba(10,132,255,0.4);
+  }
+
+  /* ===== 底部说明 ===== */
+  .notes {
+    margin-top: 48px;
+    max-width: 920px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 24px;
+  }
+  .note-card {
+    padding: 16px 18px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--stroke-2);
+    border-radius: 12px;
+  }
+  .note-card h3 {
+    font-size: 11.5px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.04em; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .note-card p {
+    font-size: 12px; line-height: 1.55; color: var(--text-2);
+  }
+  .note-card p + p { margin-top: 6px; }
+  .note-card .kw { color: var(--text); font-weight: 600; }
+  .note-card .fix { color: #30d158; font-weight: 600; }
+
+  .caption {
+    margin-top: 16px;
+    font-size: 10.5px; color: var(--text-3);
+    max-width: 920px; line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+
+<!-- macOS 菜单栏 -->
+<div class="menubar">
+  <span class="apple"></span>
+  <div class="apps">
+    <span style="font-weight:700">Finder</span>
+    <span style="opacity:0.5">文件</span>
+    <span style="opacity:0.5">编辑</span>
+  </div>
+  <div class="right">
+    <span style="font-size:12px">🔋 87%</span>
+    <span style="font-size:12px">14:32</span>
+    <div class="fundbar-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/>
+      </svg>
+      <span>+128.45</span>
+    </div>
+  </div>
+</div>
+
+<!-- 主舞台 -->
+<div class="stage">
+
+  <!-- ========== 下拉框 ========== -->
+  <div>
+    <div class="label-top">① 状态栏下拉框 · 固定骨架</div>
+    <div class="popover glass">
+
+      <!-- Header（slim 40pt）-->
+      <div class="pop-header">
+        <div class="pop-title">
+          <span class="dot"></span>
+          <span>基金估值</span>
+          <span class="status">· 交易中</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="icon-btn" title="排序">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h13M3 12h9M3 18h5"/><path d="M17 8V4m0 0l-2 2m2-2l2 2"/>
+          </svg>
+        </div>
+        <div class="icon-btn" title="刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/>
+          </svg>
+        </div>
+        <div class="icon-btn" title="添加基金">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Hero（固定）-->
+      <div class="hero">
+        <div class="hero-row1">
+          <span class="hero-label">今日预估</span>
+          <span class="hero-avg">均值 +0.82%</span>
+        </div>
+        <div class="hero-number">
+          <span class="sign">+</span><span class="val">128.45</span><span class="unit">元</span>
+        </div>
+        <div class="hero-strip">
+          <div class="cell"><span class="k">总市值</span><span class="v muted">¥12,450</span></div>
+          <div class="sep"></div>
+          <div class="cell"><span class="k">浮动盈亏</span><span class="v up">+345.20</span></div>
+          <div class="sep"></div>
+          <div class="cell"><span class="k">已实现</span><span class="v muted">+88.00</span></div>
+        </div>
+      </div>
+
+      <!-- 列表（滚动）-->
+      <div class="list-wrap">
+        <!-- Row 1 - 高亮（演示被点击）-->
+        <div class="fund-row highlight">
+          <div class="fund-left">
+            <div class="fund-name">易方达蓝筹精选混合</div>
+            <div class="fund-meta">
+              <span class="fund-code">005827</span>
+              <span class="badge mix">混合</span>
+              <span class="badge hold">1,200份</span>
+              <span class="badge dca">定投</span>
+            </div>
+          </div>
+          <svg class="spark" viewBox="0 0 46 22" preserveAspectRatio="none">
+            <defs><linearGradient id="g1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ff5a4d" stop-opacity="0.3"/><stop offset="1" stop-color="#ff5a4d" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 16 L8 14 L15 15 L23 10 L30 8 L38 6 L46 3 L46 22 L0 22 Z" fill="url(#g1)"/>
+            <path d="M0 16 L8 14 L15 15 L23 10 L30 8 L38 6 L46 3" fill="none" stroke="#ff5a4d" stroke-width="1.6"/>
+            <circle cx="46" cy="3" r="2" fill="#ff5a4d"/>
+          </svg>
+          <div class="fund-right">
+            <span class="chg up">+1.24%</span>
+            <span class="nav-line"><span class="est">估</span>2.0234</span>
+            <span class="pnl up">+29.80</span>
+          </div>
+        </div>
+
+        <!-- Row 2 -->
+        <div class="fund-row">
+          <div class="fund-left">
+            <div class="fund-name">富国天惠成长混合</div>
+            <div class="fund-meta">
+              <span class="fund-code">161005</span>
+              <span class="badge mix">混合</span>
+              <span class="badge hold">800份</span>
+            </div>
+          </div>
+          <svg class="spark" viewBox="0 0 46 22" preserveAspectRatio="none">
+            <defs><linearGradient id="g2" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#34c759" stop-opacity="0.3"/><stop offset="1" stop-color="#34c759" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 6 L8 8 L15 7 L23 12 L30 10 L38 14 L46 16 L46 22 L0 22 Z" fill="url(#g2)"/>
+            <path d="M0 6 L8 8 L15 7 L23 12 L30 10 L38 14 L46 16" fill="none" stroke="#34c759" stroke-width="1.6"/>
+            <circle cx="46" cy="16" r="2" fill="#34c759"/>
+          </svg>
+          <div class="fund-right">
+            <span class="chg down">−0.43%</span>
+            <span class="nav-line"><span class="est">估</span>3.0123</span>
+            <span class="pnl down">−10.50</span>
+          </div>
+        </div>
+
+        <!-- Row 3 -->
+        <div class="fund-row">
+          <div class="fund-left">
+            <div class="fund-name">兴全合宜混合</div>
+            <div class="fund-meta">
+              <span class="fund-code">163417</span>
+              <span class="badge mix">混合</span>
+              <span class="badge hold">2,500份</span>
+            </div>
+          </div>
+          <svg class="spark" viewBox="0 0 46 22" preserveAspectRatio="none">
+            <defs><linearGradient id="g3" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ff5a4d" stop-opacity="0.3"/><stop offset="1" stop-color="#ff5a4d" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 14 L8 12 L15 13 L23 9 L30 11 L38 7 L46 5 L46 22 L0 22 Z" fill="url(#g3)"/>
+            <path d="M0 14 L8 12 L15 13 L23 9 L30 11 L38 7 L46 5" fill="none" stroke="#ff5a4d" stroke-width="1.6"/>
+            <circle cx="46" cy="5" r="2" fill="#ff5a4d"/>
+          </svg>
+          <div class="fund-right">
+            <span class="chg up">+0.88%</span>
+            <span class="nav-line"><span class="est">估</span>1.6543</span>
+            <span class="pnl up">+36.40</span>
+          </div>
+        </div>
+
+        <!-- Row 4 -->
+        <div class="fund-row">
+          <div class="fund-left">
+            <div class="fund-name">招商中证白酒指数</div>
+            <div class="fund-meta">
+              <span class="fund-code">161725</span>
+              <span class="badge index">指数</span>
+              <span class="badge hold">3,000份</span>
+              <span class="badge dca">定投</span>
+            </div>
+          </div>
+          <svg class="spark" viewBox="0 0 46 22" preserveAspectRatio="none">
+            <defs><linearGradient id="g4" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ff5a4d" stop-opacity="0.3"/><stop offset="1" stop-color="#ff5a4d" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 17 L8 15 L15 16 L23 13 L30 9 L38 7 L46 4 L46 22 L0 22 Z" fill="url(#g4)"/>
+            <path d="M0 17 L8 15 L15 16 L23 13 L30 9 L38 7 L46 4" fill="none" stroke="#ff5a4d" stroke-width="1.6"/>
+            <circle cx="46" cy="4" r="2" fill="#ff5a4d"/>
+          </svg>
+          <div class="fund-right">
+            <span class="chg up">+2.10%</span>
+            <span class="nav-line"><span class="est">估</span>1.1023</span>
+            <span class="pnl up">+69.30</span>
+          </div>
+        </div>
+
+        <!-- Row 5 -->
+        <div class="fund-row">
+          <div class="fund-left">
+            <div class="fund-name">中欧医疗健康混合A</div>
+            <div class="fund-meta">
+              <span class="fund-code">003095</span>
+              <span class="badge mix">混合</span>
+            </div>
+          </div>
+          <svg class="spark" viewBox="0 0 46 22" preserveAspectRatio="none">
+            <defs><linearGradient id="g5" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#34c759" stop-opacity="0.3"/><stop offset="1" stop-color="#34c759" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 8 L8 10 L15 9 L23 13 L30 12 L38 15 L46 17 L46 22 L0 22 Z" fill="url(#g5)"/>
+            <path d="M0 8 L8 10 L15 9 L23 13 L30 12 L38 15 L46 17" fill="none" stroke="#34c759" stroke-width="1.6"/>
+            <circle cx="46" cy="17" r="2" fill="#34c759"/>
+          </svg>
+          <div class="fund-right">
+            <span class="chg down">−0.92%</span>
+            <span class="nav-line"><span class="est">估</span>2.8765</span>
+          </div>
+        </div>
+
+        <!-- Row 6 -->
+        <div class="fund-row">
+          <div class="fund-left">
+            <div class="fund-name">广发科技先锋混合</div>
+            <div class="fund-meta">
+              <span class="fund-code">008903</span>
+              <span class="badge mix">混合</span>
+              <span class="badge hold">600份</span>
+            </div>
+          </div>
+          <svg class="spark" viewBox="0 0 46 22" preserveAspectRatio="none">
+            <defs><linearGradient id="g6" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#ff5a4d" stop-opacity="0.3"/><stop offset="1" stop-color="#ff5a4d" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0 13 L8 11 L15 12 L23 8 L30 10 L38 6 L46 8 L46 22 L0 22 Z" fill="url(#g6)"/>
+            <path d="M0 13 L8 11 L15 12 L23 8 L30 10 L38 6 L46 8" fill="none" stroke="#ff5a4d" stroke-width="1.6"/>
+            <circle cx="46" cy="8" r="2" fill="#ff5a4d"/>
+          </svg>
+          <div class="fund-right">
+            <span class="chg up">+0.55%</span>
+            <span class="nav-line"><span class="est">估</span>1.4521</span>
+            <span class="pnl up">+4.80</span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer（固定）-->
+      <div class="pop-footer">
+        <span>更新 14:32:05</span>
+        <div class="spacer"></div>
+        <div class="fbtn" title="主窗口">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/>
+          </svg>
+        </div>
+        <div class="fbtn" title="AI 分析">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5z"/>
+          </svg>
+        </div>
+        <div class="fbtn" title="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1A1.7 1.7 0 004.6 9a1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 中间箭头 -->
+  <div class="arrow-col">
+    <div class="a-label">点击基金</div>
+    <svg class="arrow-svg" viewBox="0 0 40 28" fill="none">
+      <path d="M2 14 H32" stroke="#0a84ff" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <path d="M28 8 L34 14 L28 20" stroke="#0a84ff" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <div class="a-sub">弹出独立窗口</div>
+  </div>
+
+  <!-- ========== 独立编辑窗口 ========== -->
+  <div style="position:relative">
+    <div class="label-top">② 独立编辑窗口 · 彻底根治保存 bug</div>
+    <div class="edit-window">
+      <div class="ew-titlebar">
+        <div class="ew-lights"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+        <div class="ew-title">编辑持仓</div>
+      </div>
+      <div class="ew-body">
+
+        <!-- 基金信息 -->
+        <div class="ew-fund-info">
+          <div>
+            <div class="name">易方达蓝筹精选混合</div>
+            <div class="code">005827 · 混合</div>
+          </div>
+          <span class="chg-sm">+1.24%</span>
+        </div>
+
+        <!-- 已有记录 -->
+        <div class="records-h">
+          <span>持仓记录</span>
+          <span class="count">3 笔 · 剩余 1,200 份</span>
+        </div>
+        <div class="records">
+          <div class="record">
+            <div class="chip buy">+</div>
+            <div>
+              <div class="r-main">买入 500 份</div>
+              <div class="r-sub">成本 1.9834 · 03/15</div>
+            </div>
+          </div>
+          <div class="record">
+            <div class="chip dca">+</div>
+            <div>
+              <div class="r-main">定投 400 份</div>
+              <div class="r-sub">成本 2.0120 · 04/15</div>
+            </div>
+          </div>
+          <div class="record">
+            <div class="chip buy">+</div>
+            <div>
+              <div class="r-main">买入 300 份</div>
+              <div class="r-sub">成本 2.0510 · 05/15</div>
+            </div>
+            <span class="trash">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>
+            </span>
+          </div>
+        </div>
+
+        <!-- 汇总 -->
+        <div class="summary-bar">
+          <div class="item"><span class="k">均价</span><span class="v">2.0089</span></div>
+          <div class="sep"></div>
+          <div class="item"><span class="k">已实现</span><span class="v">+88.00</span></div>
+        </div>
+
+        <!-- 新增交易 -->
+        <div style="margin-top:4px">
+          <div class="seg">
+            <div class="s on">份额买入</div>
+            <div class="s">金额买入</div>
+            <div class="s">卖出</div>
+          </div>
+        </div>
+        <div class="input-row">
+          <div class="field"><input type="text" placeholder="份额" value="200"></div>
+          <div class="field"><input type="text" placeholder="成本净值" value="2.0234"></div>
+        </div>
+        <div class="action-row">
+          <button class="btn-ghost">清空全部</button>
+          <button class="btn-primary">添加记录</button>
+        </div>
+
+        <!-- 定投计划 -->
+        <div class="dca-block">
+          <div class="dca-h">
+            <span>定投计划</span>
+            <span class="dca-on"><span class="d"></span>已设置 · 每月 500 元</span>
+          </div>
+          <div class="dca-row">
+            <div class="seg" style="flex:1">
+              <div class="s">周</div>
+              <div class="s on">月</div>
+              <div class="s">双月</div>
+            </div>
+            <div class="field" style="max-width:90px"><input type="text" value="500"></div>
+            <span style="font-size:11px;color:var(--text-2)">元</span>
+            <button class="btn-primary" style="padding:7px 14px;font-size:11.5px">更新</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 设计说明 -->
+<div class="notes">
+  <div class="note-card">
+    <h3>① 下拉框：固定骨架，不再跳高</h3>
+    <p><span class="kw">问题</span>：原版把列表 / Hero / 添加面板 / 编辑面板 / 设置 / 图表全塞进一个 VStack，每切一个面板就重算 <code>listMaxHeight</code>，整个菜单<span class="kw">视觉跳动</span>。</p>
+    <p><span class="fix">解法</span>：Header(slim 40pt) → Hero(固定) → 列表(flex 滚动) → Footer(固定)，四段骨架永远不变。添加 / 设置改为<span class="kw">覆盖层或独立窗口</span>，列表高度不再被挤压。列表行以「基金名 + 涨跌幅」为视觉锚点，净值 / 盈亏降级到次级，更易扫读。</p>
+  </div>
+  <div class="note-card">
+    <h3>② 编辑表单：独立窗口，根治保存 bug</h3>
+    <p><span class="kw">问题</span>：<code>EditHoldingView</code> 作为内联条件视图挤在受限 popover 里——长列表时保存按钮被挤出可点击区，叠加 30 秒自动刷新重建 ContentView 冲掉本地 <code>@State</code>，<span class="kw">guard 静默 return</span>，看起来「保存没反应」。</p>
+    <p><span class="fix">解法</span>：点击基金 → <code>openWindow(id: "edit-holding")</code> 弹出<span class="kw">独立窗口</span>（项目已用此机制打开主窗口 / AI 分析）。窗口不受 popover 高度限制、保存按钮永远可点、菜单关掉也不丢输入、自动刷新不再冲掉表单。<span class="kw">数据层无需改动</span>。</p>
+  </div>
+</div>
+
+<div class="caption">
+  保留的品牌签名：Liquid Glass 玻璃面板 · 红涨(<code>#ff5a4d</code>)绿跌(<code>#34c759</code>)语义色 · Sparkline 迷你走势 · 等宽数字 · 橙色定投(<code>#e8590c</code>)。原型为暗色模式；落地 Swift 时沿用现有 <code>fundUp/fundDown/fundDCA</code> 的亮暗自适应色。
+</div>
+
+</body>
+</html>

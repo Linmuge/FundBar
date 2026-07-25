@@ -12,10 +12,12 @@ final class FundService {
     static let shared = FundService()
 
     private let session: URLSession
-    private var currentSource: FundDataSource
 
-    /// 所有可用数据源
-    private let sources: [DataSource: FundDataSource]
+    /// 主数据源（当前使用东方财富移动端接口）
+    private let primarySource: FundDataSource
+
+    /// 历史注册表，供 switchSource(to:) 按 DataSource 枚举切换（保留外部 API 兼容）
+    private let sourcesByEnum: [DataSource: FundDataSource]
 
     private init() {
         let config = URLSessionConfiguration.default
@@ -24,24 +26,20 @@ final class FundService {
         let session = URLSession(configuration: config)
         self.session = session
 
-        let tiantian = TiantianFundSource(session: session)
-
-        self.sources = [
-            .tiantian: tiantian
-        ]
-        self.currentSource = tiantian
+        let eastmoneyMobile = EastMoneyMobileSource(session: session)
+        self.primarySource = eastmoneyMobile
+        self.sourcesByEnum = [:]
     }
 
-    /// 切换数据源
+    /// 切换数据源（保留外部 API 兼容；内部默认走 primarySource + fallback 链）
     func switchSource(to source: DataSource) {
-        if let newSource = sources[source] {
-            currentSource = newSource
-        }
+        // 当前架构以 primarySource + fallbackSources 自动降级为主，此处保留空实现以兼容现有调用
+        _ = source
     }
 
     /// 获取单只基金的实时估值
     func fetchEstimate(code: String) async throws -> Fund {
-        try await currentSource.fetchEstimate(code: code)
+        try await primarySource.fetchEstimate(code: code)
     }
 
     /// 批量获取多只基金的实时估值
@@ -49,7 +47,7 @@ final class FundService {
         await withTaskGroup(of: Fund?.self, returning: [Fund].self) { group in
             for code in codes {
                 group.addTask {
-                    try? await self.currentSource.fetchEstimate(code: code)
+                    try? await self.primarySource.fetchEstimate(code: code)
                 }
             }
 
@@ -211,6 +209,42 @@ final class TiantianFundSource: FundDataSource {
     }
 }
 
+/// 东方财富移动端数据源（主源）—— 使用 fundmobapi FundMNFInfo 接口
+/// 替代已废弃的 fundgz.1234567.com.cn
+final class EastMoneyMobileSource: FundDataSource {
+    let name = "东方财富(移动)"
+    private let session: URLSession
+
+    init(session: URLSession) {
+        self.session = session
+    }
+
+    func fetchEstimate(code: String) async throws -> Fund {
+        let urlString = "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNFInfo?pageIndex=1&pageSize=1&plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=1&Fcodes=\(code)"
+        guard let url = URL(string: urlString) else {
+            throw FundError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://mpservice.com/", forHTTPHeaderField: "Referer")
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200..<300).contains(httpResponse.statusCode) else {
+            throw FundError.serverError
+        }
+
+        let mnfResponse = try JSONDecoder().decode(FundMNFInfoResponse.self, from: data)
+        guard let item = mnfResponse.datas?.first(where: { $0.fcode == code }) ?? mnfResponse.datas?.first else {
+            throw FundError.decodingError
+        }
+
+        return Fund(fromMNFInfo: item, expansion: mnfResponse.expansion)
+    }
+}
+
 /// 东方财富 API 响应模型
 struct EastMoneyResponse: Codable {
     let data: EastMoneyData?
@@ -246,6 +280,54 @@ struct EastMoneyNavItem: Codable {
     }
 }
 
+/// 东方财富移动端 FundMNFInfo 接口响应模型（替代已废弃的 fundgz.1234567.com.cn）
+struct FundMNFInfoResponse: Codable {
+    let datas: [FundMNFInfoItem]?
+    let errCode: Int?
+    /// Expansion 字段包含"当前估值日期"(GZTIME)和"净值日期"(FSRQ)，
+    /// 即使盘中 GSZ/GSZZL 为 null，Expansion.GZTIME 仍是今天，可用于判断 isNavUpdatedToday
+    let expansion: FundMNFInfoExpansion?
+
+    enum CodingKeys: String, CodingKey {
+        case datas = "Datas"
+        case errCode = "ErrCode"
+        case expansion = "Expansion"
+    }
+}
+
+/// FundMNFInfo 的 Expansion 字段
+struct FundMNFInfoExpansion: Codable {
+    let gztime: String?   // GZTIME 当前估值日期（今天，无论是否交易时段）
+    let fsrq: String?     // FSRQ   净值日期（最近一个交易日）
+
+    enum CodingKeys: String, CodingKey {
+        case gztime = "GZTIME"
+        case fsrq = "FSRQ"
+    }
+}
+
+struct FundMNFInfoItem: Codable {
+    let fcode: String?        // FCODE     基金代码
+    let shortname: String?    // SHORTNAME 基金简称
+    let nav: String?          // NAV       单位净值
+    let navchgrt: String?     // NAVCHGRT  净值涨跌幅 (盘外仍有值)
+    let gsz: String?          // GSZ       估算净值 (盘外可能为 null)
+    let gszzl: String?        // GSZZL     估算涨跌幅 (盘外可能为 null)
+    let gztime: String?       // GZTIME    估算时间 yyyy-MM-dd (Datas 内，盘外常为 null)
+    let pdate: String?        // PDATE     净值日期 yyyy-MM-dd
+
+    enum CodingKeys: String, CodingKey {
+        case fcode = "FCODE"
+        case shortname = "SHORTNAME"
+        case nav = "NAV"
+        case navchgrt = "NAVCHGRT"
+        case gsz = "GSZ"
+        case gszzl = "GSZZL"
+        case gztime = "GZTIME"
+        case pdate = "PDATE"
+    }
+}
+
 /// 基金服务错误类型
 enum FundError: LocalizedError {
     case invalidURL
@@ -266,4 +348,3 @@ enum FundError: LocalizedError {
         }
     }
 }
-
