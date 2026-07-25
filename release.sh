@@ -45,7 +45,7 @@ spctl -a -vv -t exec "$APP_PATH" || true
 
 # ---------- 2. 公证 app 并订书钉 ----------
 if [ "$NOTARIZE" != "0" ]; then
-    echo "→ 提交 app 公证（profile: $NOTARY_PROFILE）…"
+    echo "→ 提交 app 公证（profile: ${NOTARY_PROFILE}）…"
     NOTARY_ZIP="$(mktemp -t FundBar).zip"
     ditto -c -k --keepParent "$APP_PATH" "$NOTARY_ZIP"
     xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
