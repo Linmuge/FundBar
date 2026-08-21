@@ -76,7 +76,7 @@ final class StockQuoteService {
 
     // MARK: - 腾讯接口格式转换
 
-    /// `1.600519` → `sh600519`；`0.000001` → `sz000001`；`116.00700` → `hk00700`
+    /// `1.600519` → `sh600519`；`0.000001` → `sz000001`；`116.00700` → `hk00700`；`105.AAPL` → `usAAPL`
     private static func toTencentCode(_ secid: String) -> String? {
         let parts = secid.split(separator: ".", maxSplits: 1)
         guard parts.count == 2 else { return nil }
@@ -88,25 +88,32 @@ final class StockQuoteService {
         case "1":   prefix = "sh"    // 沪市
         case "0":   prefix = "sz"    // 深市
         case "116": prefix = "hk"    // 港股
+        case "105", "106", "107":    // 美股（纳斯达克/纽交所/AMEX）
+            prefix = "us"
+        case "us":  prefix = "us"    // 美股指数（us.NDX / us.INX 虚拟市场前缀）
         default:    return nil
         }
         return prefix + code
     }
 
-    /// 反向：腾讯代码 → secid（用于结果映射回原始 key）
-    private static func fromTencentCode(_ tencentCode: String) -> String? {
-        guard tencentCode.count > 2 else { return nil }
+    /// 反向：腾讯代码 → secid 列表（用于结果映射回原始 key）
+    /// 美股（us 前缀）无法从 ticker 反推具体交易所（105/106/107），
+    /// 返回三个市场 key 全部登记，调用方按 "105.AAPL"/"106.AAPL" 查询都能命中
+    private static func secids(forTencentCode tencentCode: String) -> [String] {
+        guard tencentCode.count > 2 else { return [] }
         let prefix = String(tencentCode.prefix(2))
         let code = String(tencentCode.dropFirst(2))
 
-        let market: String
         switch prefix {
-        case "sh": market = "1"
-        case "sz": market = "0"
-        case "hk": market = "116"
-        default:   return nil
+        case "sh": return ["1.\(code)"]
+        case "sz": return ["0.\(code)"]
+        case "hk": return ["116.\(code)"]
+        case "us":
+            // 个股（105/106/107）无法从 ticker 反推交易所，三个市场 key 全登记；
+            // "us.XXX" 供美股指数（us.NDX 等）的精确查询
+            return ["105.\(code)", "106.\(code)", "107.\(code)", "us.\(code)"]
+        default:   return []
         }
-        return "\(market).\(code)"
     }
 
     /// 解析腾讯返回的 `v_sh600519="...";v_sz000001="...";` 格式
@@ -128,11 +135,13 @@ final class StockQuoteService {
             let tencentCode = String(text[keyRange])
             let value = String(text[valueRange])
 
-            guard let secid = fromTencentCode(tencentCode),
-                  let quote = parseQuoteValue(value) else {
+            guard let quote = parseQuoteValue(value) else {
                 continue
             }
-            result[secid] = quote
+            // 美股一条行情登记 3 个市场 key（105/106/107），其余市场 1 个
+            for secid in secids(forTencentCode: tencentCode) {
+                result[secid] = quote
+            }
         }
 
         return result

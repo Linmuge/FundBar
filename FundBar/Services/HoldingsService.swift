@@ -37,8 +37,8 @@ final class HoldingsService {
     private var memoryCache: [String: CacheEntry] = [:]
     private let cacheQueue = DispatchQueue(label: "com.fundbar.holdings.cache")
 
-    /// UserDefaults 持久化 key
-    private let persistedCacheKey = "fund_holdings_cache_v1"
+    /// UserDefaults 持久化 key（v2：v1 曾缓存过拉取失败的空结果，污染 7 天，升版本一次性作废）
+    private let persistedCacheKey = "fund_holdings_cache_v2"
 
     /// 缓存有效期（秒）。季报数据，7 天足够安全
     private let cacheTTL: TimeInterval = 7 * 24 * 60 * 60
@@ -65,25 +65,43 @@ final class HoldingsService {
             return cached.meta
         }
         let meta = await fetchEstimateMetaFromAPI(fundCode: fundCode)
-        writeCache(fundCode: fundCode, meta: meta)
+        // 拉取失败（无重仓且无指数）不写缓存 —— 否则一次网络抖动/限流
+        // 会把空结果固化 7 天，期间估算静默失败（表现为估值显示 "—"）
+        if !meta.holdings.isEmpty || meta.trackingIndexCode != nil {
+            writeCache(fundCode: fundCode, meta: meta)
+        }
         return meta
     }
 
-    /// 批量获取多只基金的估算元数据
+    /// 批量获取多只基金的估算元数据（并发受控，避免触发接口限流）
     func getEstimateMeta(for fundCodes: [String]) async -> [String: FundEstimateMeta] {
-        await withTaskGroup(of: (String, FundEstimateMeta).self, returning: [String: FundEstimateMeta].self) { group in
-            for code in fundCodes {
-                group.addTask {
-                    let meta = await self.getEstimateMeta(fundCode: code)
-                    return (code, meta)
+        // 东财移动端接口对高并发敏感：17 只基金 × 2 接口全并发 = 34 个瞬时请求
+        // 会触发限流（实测仅 2 只成功）。限并发为 3，配合失败不缓存 + 下轮重试
+        let maxConcurrent = 3
+        var result: [String: FundEstimateMeta] = [:]
+        var iterator = fundCodes.makeIterator()
+
+        await withTaskGroup(of: (String, FundEstimateMeta).self) { group in
+            var running = 0
+            func addNext() {
+                if let code = iterator.next() {
+                    group.addTask {
+                        let meta = await self.getEstimateMeta(fundCode: code)
+                        return (code, meta)
+                    }
+                    running += 1
                 }
             }
-            var result: [String: FundEstimateMeta] = [:]
-            for await (code, meta) in group {
-                result[code] = meta
+            for _ in 0..<maxConcurrent { addNext() }
+            while running > 0 {
+                if let (code, meta) = await group.next() {
+                    result[code] = meta
+                    running -= 1
+                    addNext()
+                }
             }
-            return result
         }
+        return result
     }
 
     // MARK: - API

@@ -89,13 +89,40 @@ struct Fund: Identifiable, Codable, Equatable {
         let rawGsz = item.gsz ?? ""
         let rawGszzl = item.gszzl ?? ""
 
+        // 净值是否已确认。
+        // 判据有两条，命中任一即确认：
+        //   1. PDATE == Expansion.GZTIME（常规盘后：两者都是今天）
+        //   2. PDATE == 本地今天 —— 东财在晚间会把 Expansion.GZTIME 翻到"明天"，
+        //      此时今日净值其实已确认（PDATE=今天），若只按 1 判断会误丢弃
+        //      今日真实涨跌幅（NAVCHGRT），导致显示空估值并依赖不必要的中估算
+        // 盘中净值未确认：NAVCHGRT 是昨日涨跌幅，绝不能冒充今日估值 —— 否则
+        // 本地估算失败（QDII/纯债/行情拉取失败）时会显示完全错误的"昨日值"。
+        let today = Self.localDateString()
+        let navConfirmed: Bool
+        if let pdate = item.pdate, !pdate.isEmpty {
+            if pdate == today {
+                navConfirmed = true
+            } else if let gzday = expansion?.gztime, !gzday.isEmpty {
+                navConfirmed = pdate == String(gzday.prefix(10))
+            } else {
+                navConfirmed = false
+            }
+        } else {
+            navConfirmed = false
+        }
+
         fundcode = item.fcode ?? ""
         name = item.shortname ?? ""
         dwjz = nav
-        // 估算值缺失（盘外）→ 回退到确认净值，避免 bestNav/marketValue 计算出 0
+        // 估算值缺失 → 回退到确认净值，避免 bestNav/marketValue 计算出 0
         gsz = rawGsz.isEmpty ? nav : rawGsz
-        // 估算涨跌幅缺失（盘外）→ 回退到净值涨跌幅，保证 changePercent 显示真实数据
-        gszzl = rawGszzl.isEmpty ? navchgrt : rawGszzl
+        // 估算涨跌幅：仅当净值已确认时才允许用净值涨跌幅兜底（那是真实数据）；
+        // 盘中未确认时留空 —— changePercent 解析为 0，交由 EstimateService 覆盖
+        if rawGszzl.isEmpty {
+            gszzl = navConfirmed ? navchgrt : ""
+        } else {
+            gszzl = rawGszzl
+        }
         // gztime 优先级：Datas 内 GZTIME > Expansion.GZTIME > PDATE
         // 关键：盘外 Datas.GZTIME 为 null 时，必须用 Expansion.GZTIME（今天），
         // 不能用 PDATE（昨天），否则 isNavUpdatedToday 会误判为 true，导致估算被跳过
@@ -118,11 +145,24 @@ struct Fund: Identifiable, Codable, Equatable {
         return estimatedValue
     }
 
-    /// 当日净值是否已更新（jzrq 与 gztime 同日 = 基金公司已发布实际净值）
+    /// 当日净值是否已更新（基金公司已发布实际净值）
+    /// 两条判据命中任一即认为已更新：
+    ///   1. jzrq 与 gztime 同日（常规盘后）
+    ///   2. jzrq == 本地今天 —— 东财晚间会把 GZTIME 翻到明天，此时 jzrq(今天) 已是确认净值
     var isNavUpdatedToday: Bool {
-        guard !jzrq.isEmpty, gztime.count >= 10 else { return false }
-        let tradingDay = String(gztime.prefix(10)) // "yyyy-MM-dd"
-        return jzrq == tradingDay
+        guard !jzrq.isEmpty else { return false }
+        if jzrq == Self.localDateString() { return true }
+        guard gztime.count >= 10 else { return false }
+        return jzrq == String(gztime.prefix(10))
+    }
+
+    /// 本地时区的 yyyy-MM-dd 日期串
+    static func localDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        return formatter.string(from: Date())
     }
 
     /// 涨跌幅数值

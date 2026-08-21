@@ -735,7 +735,8 @@ final class FundViewModel: ObservableObject {
                         gsz: result[i].gsz,
                         gszzl: result[i].gszzl,
                         gztime: result[i].gztime,
-                        jzrq: result[i].jzrq
+                        jzrq: result[i].jzrq,
+                        isEstimatedLocally: result[i].isEstimatedLocally
                     )
                 }
             }

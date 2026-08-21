@@ -1,4 +1,8 @@
 import Foundation
+import os.log
+
+/// 估算链路调试日志（用 `log stream --predicate 'subsystem == "com.fundbar.app"'` 过滤）
+private let estimateLog = Logger(subsystem: "com.fundbar.app", category: "estimate")
 
 /// 基金估值估算服务
 ///
@@ -39,7 +43,8 @@ final class EstimateService {
 
         // 3) 收集所有需要的 secid（股票 + 指数，去重）
         var allSecids = Set<String>()
-        for (_, meta) in metaMap {
+        for (code, meta) in metaMap {
+            estimateLog.debug("meta[\(code, privacy: .public)] holdings=\(meta.holdings.count) index=\(meta.trackingIndexCode ?? "nil", privacy: .public)")
             // 指数基金：加指数 secid（需按指数代码判断市场）
             if let indexCode = meta.trackingIndexCode, !indexCode.isEmpty {
                 if let indexSecid = Self.indexSecid(for: indexCode) {
@@ -51,11 +56,18 @@ final class EstimateService {
                 allSecids.insert("\(h.marketCode).\(h.code)")
             }
         }
-        guard !allSecids.isEmpty else { return funds }
+        guard !allSecids.isEmpty else {
+            estimateLog.error("估算终止：无可用 secid（基金数=\(fundsToEstimate.count)）")
+            return funds
+        }
 
         // 4) 批量拉取行情（股票 + 指数混在一起一次请求）
         let quotes = await StockQuoteService.shared.fetchQuotes(secids: Array(allSecids))
-        guard !quotes.isEmpty else { return funds }
+        estimateLog.debug("行情拉取：请求 \(allSecids.count) 个 secid，成功 \(quotes.count) 条")
+        guard !quotes.isEmpty else {
+            estimateLog.error("估算终止：行情全部拉取失败")
+            return funds
+        }
 
         // 5) 对每只 Fund 计算估算值
         let now = Self.currentTimestamp()
@@ -75,12 +87,14 @@ final class EstimateService {
             }
 
             guard let estimateChange = computeEstimateChange(meta: meta, quotes: quotes) else {
+                estimateLog.warning("估算失败[\(fund.fundcode, privacy: .public)]：无重仓/覆盖不足/行情缺失（holdings=\(meta.holdings.count)）")
                 result.append(fund)
                 continue
             }
 
             let lastNav = fund.unitValue
             guard lastNav > 0 else {
+                estimateLog.warning("估算失败[\(fund.fundcode, privacy: .public)]：昨日净值无效（dwjz=\(fund.dwjz, privacy: .public)）")
                 result.append(fund)
                 continue
             }
@@ -121,7 +135,8 @@ final class EstimateService {
         // 策略 2：前十大重仓股加权
         guard !meta.holdings.isEmpty else { return nil }
 
-        var totalChange = 0.0
+        var weightedChange = 0.0   // Σ(涨跌幅 × 权重)
+        var weightSum = 0.0        // Σ权重（实际拿到行情的部分）
         var hasAnyContribution = false
 
         for h in meta.holdings {
@@ -129,14 +144,20 @@ final class EstimateService {
             guard let quote = quotes[secid] else { continue }
 
             // weight=9.23 表示占净值 9.23%
-            // contribution = 股票涨跌幅 × (持仓占净值比)
-            //              = quote.changePercent × (h.weight / 100)
-            let contribution = quote.changePercent * h.weight / 100
-            totalChange += contribution
+            weightedChange += quote.changePercent * h.weight
+            weightSum += h.weight
             hasAnyContribution = true
         }
+        guard hasAnyContribution, weightSum > 0 else { return nil }
 
-        return hasAnyContribution ? totalChange : nil
+        // 前十大重仓通常只覆盖净值的 40-60%。若直接用 Σ(涨跌幅×权重) 当整只基金
+        // 涨跌幅，会系统性低估波动（显示的涨跌只有真实的一半左右）。
+        // 归一化：重仓组合的加权涨跌幅 ≈ 整只基金涨跌幅（假设其余持仓与重仓同风格）。
+        // 覆盖率过低（<35%，如债基/调仓期）置信度不足，放弃估算走诚实路径。
+        let coverage = min(weightSum, 100.0)
+        guard coverage >= 35.0 else { return nil }
+
+        return weightedChange / weightSum
     }
 
     // MARK: - 工具
@@ -145,9 +166,22 @@ final class EstimateService {
     /// 规则：
     ///   - 000xxx / 950xxx：沪市发布的指数（沪深300、上证50 等）→ "1.000xxx"
     ///   - 399xxx：深市发布的指数（创业板指、深证成指 等）→ "0.399xxx"
+    ///   - 美股/港股指数（NDX100/SPX/HSI 等非纯数字）→ 专用映射表
     ///   - 其他（如 930xxx 中证定制指数）：默认沪市，查不到由调用方 fallback
     private static func indexSecid(for indexCode: String) -> String? {
         guard !indexCode.isEmpty else { return nil }
+
+        // 美股/港股指数：东财 INDEXCODE 与腾讯代码命名不一致，显式映射
+        // （"us." 为虚拟市场前缀，由 StockQuoteService 转成 usNDX / usINX 等腾讯代码）
+        switch indexCode.uppercased() {
+        case "NDX100", "NDX":  return "us.NDX"     // 纳斯达克100 → 腾讯 usNDX
+        case "SPX", "INX", "SP500": return "us.INX" // 标普500 → 腾讯 usINX
+        case "DJI":           return "us.DJI"     // 道琼斯 → 腾讯 usDJI
+        case "HSI":           return "116.HSI"    // 恒生指数 → 腾讯 hkHSI
+        case "HSTECH":        return "116.HSTECH" // 恒生科技 → 腾讯 hkHSTECH
+        default: break
+        }
+
         if indexCode.hasPrefix("399") {
             return "0.\(indexCode)"
         }

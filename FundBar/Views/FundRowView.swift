@@ -145,6 +145,9 @@ struct FundRowView: View {
     // MARK: - Private
 
     private var changeText: String {
+        // 估值数据缺失（官方接口无估值 + 本地估算失败）时诚实显示 "—"，
+        // 不显示误导性的 +0.00%
+        guard !fund.gszzl.isEmpty else { return "—" }
         let sign = fund.changePercent >= 0 ? "+" : ""
         return "\(sign)\(fund.gszzl)%"
     }
