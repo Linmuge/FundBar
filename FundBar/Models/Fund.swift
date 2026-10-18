@@ -376,6 +376,9 @@ struct WatchedFund: Codable, Identifiable, Equatable {
     }
 
     /// 是否有持仓数据
+    /// 已清仓:有交易记录但当前份额为 0(区别于从未持仓)
+    var isCleared: Bool { !holdings.isEmpty && !hasHolding }
+
     var hasHolding: Bool {
         shares > 0
     }

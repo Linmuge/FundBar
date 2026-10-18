@@ -73,9 +73,11 @@ struct EditHoldingView: View {
                         isPresented = false
                     }
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundStyle(.tertiary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .help("关闭")
@@ -237,9 +239,9 @@ struct EditHoldingView: View {
                     }
                 }
             }
-            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: FundBarDesign.innerRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FundBarDesign.innerRadius, style: .continuous)
                     .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.65)
             }
         }
@@ -497,13 +499,10 @@ struct EditHoldingView: View {
 
     private var addTradeBox: some View {
         VStack(spacing: 10) {
-            Picker("", selection: $inputMode) {
-                Text("份额买入").tag(0)
-                Text("金额买入").tag(1)
-                Text("卖出").tag(2)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            GlassSegmented(
+                items: [("份额买入", 0), ("金额买入", 1), ("卖出", 2)],
+                selection: $inputMode
+            )
 
             if inputMode == 0 {
                 HStack(spacing: 8) {
@@ -520,12 +519,11 @@ struct EditHoldingView: View {
                         DatePicker("", selection: $buyDate, displayedComponents: .date)
                             .labelsHidden()
                             .controlSize(.small)
-                        Picker("", selection: $isBefore3PM) {
-                            Text("15:00 前").tag(true)
-                            Text("15:00 后").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                        .controlSize(.mini)
+                        GlassSegmented(
+                            items: [("15:00 前", true), ("15:00 后", false)],
+                            selection: $isBefore3PM,
+                            small: true
+                        )
                         Spacer()
                     }
                 }
@@ -575,9 +573,9 @@ struct EditHoldingView: View {
             }
         }
         .padding(13)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: FundBarDesign.innerRadius, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: FundBarDesign.innerRadius, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.65)
         }
     }
@@ -720,12 +718,11 @@ struct EditHoldingView: View {
     private var dcaSettingsContent: some View {
         if showDCASettings {
             VStack(spacing: 10) {
-                Picker("", selection: $dcaFrequency) {
-                    ForEach(DCAFrequency.allCases, id: \.self) { freq in
-                        Text(freq.rawValue).tag(freq)
-                    }
-                }
-                .pickerStyle(.segmented)
+                GlassSegmented(
+                    items: DCAFrequency.allCases.map { ($0.rawValue, $0) },
+                    selection: $dcaFrequency,
+                    small: true
+                )
 
                 HStack(spacing: 8) {
                     floatingField("金额", text: $dcaAmount)

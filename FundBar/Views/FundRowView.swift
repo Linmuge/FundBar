@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// 单只基金估值行视图
+/// 菜单栏浮窗的基金行 —— 方向 A 定稿:三列(基金 | 涨跌 | 盈亏)
+/// 名称 13pt/代码+类型标签次行;行高 42pt,悬停浅底,行间发丝线;点击编辑持仓。
 struct FundRowView: View {
     let fund: Fund
     let holding: WatchedFund?
-    let historyData: [HistoryNav]
-    let hasDCAPlan: Bool
-    let isTradingDay: Bool
+    var isTradingDay: Bool = true
+    var isLast: Bool = false
     let onDelete: () -> Void
     let onEditHolding: () -> Void
     @State private var isHovered = false
@@ -14,119 +14,74 @@ struct FundRowView: View {
     init(
         fund: Fund,
         holding: WatchedFund?,
-        historyData: [HistoryNav] = [],
-        hasDCAPlan: Bool = false,
         isTradingDay: Bool = true,
+        isLast: Bool = false,
         onDelete: @escaping () -> Void,
         onEditHolding: @escaping () -> Void
     ) {
         self.fund = fund
         self.holding = holding
-        self.historyData = historyData
-        self.hasDCAPlan = hasDCAPlan
         self.isTradingDay = isTradingDay
+        self.isLast = isLast
         self.onDelete = onDelete
         self.onEditHolding = onEditHolding
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(fund.name)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
 
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Text(fund.fundcode)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 10.5).monospacedDigit())
+                        .foregroundStyle(.tertiary)
 
                     if let h = holding, !h.fundType.isEmpty {
-                        Text(h.fundType)
-                            .font(.system(size: 9))
-                            .foregroundStyle(fundTypeColor(h.fundType))
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(fundTypeColor(h.fundType).opacity(0.14), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        FundTypeTag(type: h.fundType)
                     }
 
-                    if let h = holding, h.hasHolding {
-                        Text("\(String(format: "%.0f", h.shares))份")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-
-                    if hasDCAPlan {
-                        Text("定投")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 4)
-                            .padding(.vertical, 1)
-                            .background(.orange.opacity(0.16), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    }
-                }
-            }
-
-            Spacer()
-
-            // 中间: 迷你图
-            if !historyData.isEmpty {
-                MiniChartView(data: historyData, width: 48, height: 24)
-            }
-
-            // 右侧: 净值 + 涨跌幅 + 盈亏
-            VStack(alignment: .trailing, spacing: 3) {
-                // 始终显示净值
-                HStack(spacing: 3) {
-                    Text(fund.isNavUpdatedToday ? "净值" : "昨净")
-                        .font(.system(size: 9))
-                        .foregroundStyle(fund.isNavUpdatedToday ? Color.blue : Color.gray)
-                    Text(fund.dwjz)
-                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                }
-
-                // 估算涨跌幅
-                HStack(spacing: 4) {
-                    if isTradingDay {
-                        if !fund.isNavUpdatedToday && fund.gsz != fund.dwjz {
-                            Text("估 \(fund.gsz)")
-                                .font(.system(size: 10).monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                        Text(changeText)
-                            .font(.system(size: 11, weight: .medium).monospacedDigit())
-                            .foregroundStyle(changeColor)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .background(changeColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    } else {
-                        Text("休市")
-                            .font(.system(size: 11, weight: .medium))
+                    if holding?.isCleared == true {
+                        Text("已清仓")
+                            .font(.system(size: 9.5, weight: .medium))
                             .foregroundStyle(.secondary)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 1)
-                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .background(Color.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                     }
                 }
-
-                if let h = holding, h.hasHolding {
-                    let pl = h.profitLoss(nav: fund.bestNav)
-                    let plSign = pl >= 0 ? "+" : ""
-                    Text("\(plSign)\(String(format: "%.2f", pl))")
-                        .font(.system(size: 10, weight: .medium).monospacedDigit())
-                        .foregroundStyle(pl >= 0 ? Color.fundUp : Color.fundDown)
-                }
             }
+
+            Spacer(minLength: 8)
+
+            if isTradingDay {
+                ChangePill(text: changeText, value: fund.changePercent, small: true)
+                    .frame(width: 58, alignment: .center)
+            } else {
+                Text("休市")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 58, alignment: .center)
+            }
+
+            pnlText
+                .frame(width: 74, alignment: .trailing)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .frame(minHeight: 58)
-        .contentShape(RoundedRectangle(cornerRadius: FundBarDesign.rowRadius, style: .continuous))
+        .frame(minHeight: 42)
+        .contentShape(Rectangle())
         .fundRowSurface(isHovered: isHovered)
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Rectangle().fill(Color.primary.opacity(0.065)).frame(height: 0.5).padding(.horizontal, 10)
+            }
+        }
         .onHover { isHovered = $0 }
+        .onTapGesture { onEditHolding() }
+        .help("点击或右键编辑持仓")
         .contextMenu {
             Button {
                 onEditHolding()
@@ -144,31 +99,35 @@ struct FundRowView: View {
 
     // MARK: - Private
 
-    private var changeText: String {
-        // 估值数据缺失（官方接口无估值 + 本地估算失败）时诚实显示 "—"，
-        // 不显示误导性的 +0.00%
-        guard !fund.gszzl.isEmpty else { return "—" }
-        let sign = fund.changePercent >= 0 ? "+" : ""
-        return "\(sign)\(fund.gszzl)%"
-    }
-
-    private var changeColor: Color {
-        if fund.isUp {
-            return .fundUp
-        } else if fund.isDown {
-            return .fundDown
+    @ViewBuilder
+    private var pnlText: some View {
+        if let h = holding, h.isCleared {
+            // 已清仓:显示已实现盈亏
+            let rp = h.realizedProfit
+            Text(signedText(rp))
+                .font(.system(size: 12.5, weight: .semibold).monospacedDigit())
+                .foregroundStyle(rp >= 0 ? Color.fundUpInk : Color.fundDownInk)
+        } else if let h = holding, h.hasHolding {
+            let pl = h.profitLoss(nav: fund.bestNav)
+            Text(signedText(pl))
+                .font(.system(size: 12.5, weight: .semibold).monospacedDigit())
+                .foregroundStyle(pl >= 0 ? Color.fundUpInk : Color.fundDownInk)
+        } else {
+            Text("—")
+                .font(.system(size: 12).monospacedDigit())
+                .foregroundStyle(Color(nsColor: .quaternaryLabelColor))
         }
-        return .secondary
     }
 
-    private func fundTypeColor(_ type: String) -> Color {
-        if type.contains("股票") { return .orange }
-        if type.contains("混合") { return .purple }
-        if type.contains("债券") { return .blue }
-        if type.contains("指数") { return .teal }
-        if type.contains("货币") { return .gray }
-        if type.contains("QDII") { return .indigo }
-        if type.contains("FOF") { return .mint }
-        return .secondary
+    private func signedText(_ value: Double) -> String {
+        let sign = value >= 0 ? "+" : "−"
+        return "\(sign)\(String(format: "%.2f", abs(value)))"
+    }
+
+    private var changeText: String {
+        // 估值数据缺失时诚实显示 "—"
+        guard !fund.gszzl.isEmpty else { return "—" }
+        let sign = fund.changePercent >= 0 ? "+" : "−"
+        return "\(sign)\(fund.gszzl)%"
     }
 }

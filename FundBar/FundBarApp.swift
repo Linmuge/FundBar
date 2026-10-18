@@ -8,14 +8,7 @@ struct FundBarApp: App {
         Window("FundBar", id: "main") {
             MainWindowView(viewModel: viewModel)
         }
-        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 980, height: 720)
-        .windowResizability(.contentMinSize)
-
-        Window("AI 分析", id: "ai-analysis") {
-            AIAnalysisPageView(viewModel: viewModel)
-        }
-        .defaultSize(width: 900, height: 640)
         .windowResizability(.contentMinSize)
 
         Window("编辑持仓", id: "edit-holding") {

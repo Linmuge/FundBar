@@ -3,18 +3,46 @@ import AppKit
 
 struct AIAnalysisPageView: View {
     @ObservedObject var viewModel: FundViewModel
+    var onClose: (() -> Void)? = nil
     @State private var isPromptEditorPresented = false
     @State private var promptDraft = ""
 
     var body: some View {
-        HStack(alignment: .top, spacing: 16) {
-            settingsPanel
-                .frame(width: 340)
+        VStack(spacing: 0) {
+            if onClose != nil {
+                HStack {
+                    Text("AI 分析")
+                        .font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Button {
+                        onClose?()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22, height: 22)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭 AI 分析")
+                    .help("关闭")
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+            }
 
-            resultPanel
+            HStack(alignment: .top, spacing: 16) {
+                settingsPanel
+                    .frame(width: 340)
+
+                resultPanel
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
         }
-        .padding(20)
         .frame(minWidth: 900, minHeight: 620)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .fundWindowBackground()
         .sheet(isPresented: $isPromptEditorPresented) {
             PromptEditorSheet(

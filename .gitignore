@@ -19,3 +19,7 @@ release/
 
 # Design exploration (mockups / screenshots)
 redesign-demos/
+
+# Design exploration (macOS 27 redesign drafts)
+macos27-demos/
+.claude/
