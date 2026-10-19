@@ -125,9 +125,8 @@ struct FundRowView: View {
     }
 
     private var changeText: String {
-        // 估值数据缺失时诚实显示 "—"
+        // gszzl 本身已带符号(如 "-0.41"),直接由数值格式化,避免双重负号
         guard !fund.gszzl.isEmpty else { return "—" }
-        let sign = fund.changePercent >= 0 ? "+" : "−"
-        return "\(sign)\(fund.gszzl)%"
+        return String(format: "%+.2f%%", fund.changePercent)
     }
 }
